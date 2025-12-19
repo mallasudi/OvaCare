@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.8s ease-out forwards;
+}
+
+@keyframes pulseSlow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.animate-pulseSlow {
+  animation: pulseSlow 6s ease-in-out infinite;
+}
+
+.btn-primary {
+  @apply px-6 py-3 rounded-full bg-pink-500 text-white hover:bg-pink-600 transition-all;
+}
+
+.btn-secondary {
+  @apply px-6 py-3 rounded-full border border-pink-400 text-pink-600 hover:bg-pink-50 transition-all;
+}
+
+.card {
+  @apply bg-white p-6 rounded-2xl shadow hover:shadow-xl hover:-translate-y-1 transition;
+}
+
+/* INPUT STYLE */
+.input {
+  @apply w-full px-4 py-3 rounded-xl border border-gray-300 
+  focus:outline-none focus:ring-2 focus:ring-pink-300 
+  focus:border-pink-400 transition;
+}
+
+/* ANIMATIONS */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideUp {
+  animation: slideUp 0.7s ease-out forwards;
+}
+
+/* language toggle smooth */
+.lang-toggle {
+  transition: all 0.3s ease;
+}
+.lang-toggle:hover {
+  transform: scale(1.05);
+}
