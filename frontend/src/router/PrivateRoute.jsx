@@ -5,10 +5,10 @@ export default function PrivateRoute({ children }) {
   const { user } = useAuth();
   const token = localStorage.getItem("token");
 
-  // Must have both a user record and a valid token
-  if (user && token) {
-    return children;
-  }
+  // Accept if EITHER AuthContext has user (SPA session) OR localStorage has
+  // both token and user (after page refresh). This covers the case where
+  // Login updates localStorage but AuthContext state hasn't propagated yet.
+  const isAuthenticated = (!!user && !!token) || (!!token && !!localStorage.getItem("user"));
 
-  return <Navigate to="/login" replace />;
+  return isAuthenticated ? children : <Navigate to="/login" replace />;
 }

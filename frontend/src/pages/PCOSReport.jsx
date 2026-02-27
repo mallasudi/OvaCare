@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import API from "../utils/api";
 import jsPDF from "jspdf";
@@ -49,20 +49,40 @@ export default function PCOSReport() {
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { reportId } = useParams();
 
   useEffect(() => {
-    API.get("/pcos/my-reports")
-      .then(res => {
+    const fetchReports = async () => {
+      try {
+        const res = await API.get("/pcos/my-reports");
         setReports(res.data);
-        if (res.data?.length > 0) setSelected(res.data[0]);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+        
+        if (reportId) {
+          // If viewing specific report via URL
+          const report = res.data.find(r => r._id === reportId);
+          if (report) {
+            setSelected(report);
+            console.log("[REPORT] Loaded specific report:", reportId);
+          } else {
+            console.error("[REPORT] Report not found:", reportId);
+            setSelected(res.data[0] || null);
+          }
+        } else {
+          // Default to latest report
+          setSelected(res.data[0] || null);
+        }
+      } catch (err) {
+        console.error("[REPORT] Failed to fetch reports:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const downloadPDF = (report) => {
+    fetchReports();
+  }, [reportId]);
+
+  const buildPDF = (report) => {
     const doc = new jsPDF();
-    const cfg = riskConfig[report.risk_level] || riskConfig.Moderate;
 
     doc.setFontSize(20);
     doc.setTextColor(115, 44, 63);
@@ -94,7 +114,18 @@ export default function PCOSReport() {
       });
     }
 
+    return doc;
+  };
+
+  const downloadPDF = (report) => {
+    const doc = buildPDF(report);
     doc.save(`PCOS_Report_${new Date(report.created_at).toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const viewPDF = (report) => {
+    const doc = buildPDF(report);
+    const url = doc.output("bloburl");
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   if (loading) {
@@ -120,12 +151,25 @@ export default function PCOSReport() {
           >
             ← Back to Dashboard
           </button>
-          <h1 className="text-2xl font-bold" style={{ color: "var(--accent)" }}>
-            🩺 My PCOS Reports
-          </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-            View your assessment history and detailed results
-          </p>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h1 className="text-2xl font-bold" style={{ color: "var(--accent)" }}>
+                🩺 My PCOS Report
+              </h1>
+              <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
+                View your assessment results and submitted data
+              </p>
+            </div>
+            {selected && (
+              <button
+                onClick={() => downloadPDF(selected)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-white text-sm font-bold shadow-lg hover:scale-105 transition-all"
+                style={{ background: "linear-gradient(135deg, var(--primary), var(--accent))" }}
+              >
+                ⬇ Download Report
+              </button>
+            )}
+          </div>
         </motion.div>
 
         {reports.length === 0 ? (
@@ -141,7 +185,7 @@ export default function PCOSReport() {
               Complete a PCOS assessment to see your results here.
             </p>
             <button
-              onClick={() => navigate("/assessment")}
+              onClick={() => navigate("/check")}
               className="px-6 py-3 rounded-full text-white font-semibold shadow-lg transition"
               style={{ background: "linear-gradient(135deg, var(--primary), var(--accent))" }}
             >
@@ -195,8 +239,14 @@ export default function PCOSReport() {
                       📅 {new Date(selected.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
                     </span>
                     <button
-                      onClick={() => downloadPDF(selected)}
+                      onClick={() => viewPDF(selected)}
                       className="ml-auto bg-white/20 hover:bg-white/30 border border-white/30 text-white text-sm px-4 py-2 rounded-full font-medium transition"
+                    >
+                      👁 View PDF
+                    </button>
+                    <button
+                      onClick={() => downloadPDF(selected)}
+                      className="bg-white/20 hover:bg-white/30 border border-white/30 text-white text-sm px-4 py-2 rounded-full font-medium transition"
                     >
                       ⬇ Download PDF
                     </button>

@@ -14,6 +14,14 @@ import PCOS from "./pages/PCOS";
 import Consult from "./pages/Consultation";
 import PCOSReport from "./pages/PCOSReport";
 import PrivateRoute from "./router/PrivateRoute";
+import BottomNav from "./components/BottomNav";
+
+const DashboardAssessment = () => (
+  <>
+    <Assessment />
+    <BottomNav />
+  </>
+);
 
 function AppContent() {
   const location = useLocation();
@@ -30,10 +38,8 @@ function AppContent() {
   const token = localStorage.getItem("token");
   const isAuthenticated = !!user && !!token;
 
-  // Hide public Navbar on dashboard/private routes ONLY when the user is logged in.
-  // /assessment is intentionally excluded — it always shows the public Navbar.
-  const dashboardRoutes = ["/dashboard", "/journal", "/period", "/consultation", "/report"];
-  const hideNavbar = dashboardRoutes.includes(location.pathname) && isAuthenticated;
+  const dashboardRoutes = ["/dashboard", "/journal", "/period", "/consultation", "/report", "/check"];
+  const hideNavbar = (dashboardRoutes.some(route => location.pathname === route || location.pathname.startsWith(route + "/")) && isAuthenticated);
 
   return (
     <>
@@ -52,10 +58,12 @@ function AppContent() {
 
         {/* Protected routes – require login */}
         <Route path="/dashboard" element={<PrivateRoute><Dashboard lang={lang} /></PrivateRoute>} />
+        <Route path="/check" element={<PrivateRoute><DashboardAssessment /></PrivateRoute>} />
         <Route path="/journal" element={<PrivateRoute><HealthJournal /></PrivateRoute>} />
         <Route path="/period" element={<PrivateRoute><PeriodTracker /></PrivateRoute>} />
         <Route path="/consultation" element={<PrivateRoute><Consultation /></PrivateRoute>} />
         <Route path="/report" element={<PrivateRoute><PCOSReport /></PrivateRoute>} />
+        <Route path="/report/:reportId" element={<PrivateRoute><PCOSReport /></PrivateRoute>} />
       </Routes>
     </>
   );

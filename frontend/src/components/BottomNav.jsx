@@ -63,7 +63,7 @@ export default function BottomNav() {
                   key="fab"
                   whileHover={{ scale: 1.08 }}
                   whileTap={{ scale: 0.92 }}
-                  onClick={() => navigate("/assessment")}
+                  onClick={() => navigate("/check")}
                   className="flex flex-col items-center gap-0.5 -mt-6 relative"
                 >
                   <div
@@ -74,7 +74,7 @@ export default function BottomNav() {
                   </div>
                   <span
                     className="text-[9px] font-semibold"
-                    style={{ color: location.pathname === "/assessment" ? "var(--primary)" : "var(--text-muted)" }}
+                    style={{ color: location.pathname === "/check" ? "var(--primary)" : "var(--text-muted)" }}
                   >
                     Check
                   </span>

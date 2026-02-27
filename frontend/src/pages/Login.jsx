@@ -3,9 +3,11 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import API from "../utils/api";
 import { saveAuth } from "../utils/auth";
+import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -17,8 +19,32 @@ export default function Login() {
     setLoading(true);
     try {
       const res = await API.post("/auth/login", { email, password });
+      // Save to localStorage AND update AuthContext React state
       saveAuth(res.data);
-      navigate("/dashboard");
+      login(res.data.user);
+
+      // Check if there's a pending assessment from public form
+      const pending = sessionStorage.getItem("pendingAssessment");
+      if (pending) {
+        console.log("[LOGIN] Found pending assessment, submitting...");
+        try {
+          const payload = JSON.parse(pending);
+          const predictionRes = await API.post("/pcos/predict", payload);
+          console.log("[LOGIN] Pending assessment submitted:", predictionRes.data);
+          sessionStorage.removeItem("pendingAssessment");
+          const rid = predictionRes.data.reportId;
+          navigate(rid ? `/report/${rid}` : "/report");
+        } catch (err) {
+          console.error("[LOGIN] Failed to submit pending assessment:", {
+            message: err.message,
+            status: err.response?.status,
+            data: err.response?.data,
+          });
+          navigate("/dashboard");
+        }
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(err.response?.data?.message || "Invalid email or password");
     } finally { setLoading(false); }
