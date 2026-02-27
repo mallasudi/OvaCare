@@ -26,6 +26,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("user");
     localStorage.removeItem("token");
     localStorage.removeItem("latestResult");
+    sessionStorage.removeItem("pendingAssessment");
   };
 
   return (
