@@ -1,0 +1,41 @@
+/* ======================================
+   🌸 OVACARE – OBSIDIAN ROSE THEME
+   ====================================== */
+
+/* ---------- LIGHT THEME ---------- */
+:root {
+  /* Backgrounds */
+  --bg-main: #F7E8EC;
+  --bg-secondary: #ffffff;
+
+  /* Brand Colors */
+  --primary: #C57C8A;
+  --primary-hover: #b06c7a;
+  --accent: #732C3F;
+
+  /* Text */
+  --text-main: #3a1f28;
+  --text-muted: #7a4b58;
+
+  /* UI */
+  --card-bg: #ffffff;
+  --border-color: #e5cbd2;
+  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* ---------- DARK THEME ---------- */
+[data-theme="dark"] {
+  --bg-main: #1A0B12;
+  --bg-secondary: #241018;
+
+  --primary: #732C3F;
+  --primary-hover: #8b3a51;
+  --accent: #C57C8A;
+
+  --text-main: #f4dbe1;
+  --text-muted: #c8a0aa;
+
+  --card-bg: #241018;
+  --border-color: #3a1a24;
+  --shadow-soft: 0 6px 25px rgba(0, 0, 0, 0.5);
+}

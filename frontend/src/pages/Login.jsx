@@ -1,98 +1,94 @@
-import { Link, useNavigate } from "react-router-dom";
+﻿import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { motion } from "framer-motion";
 import API from "../utils/api";
 import { saveAuth } from "../utils/auth";
 
 export default function Login() {
   const navigate = useNavigate();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
-
+    setLoading(true);
     try {
-      const res = await API.post("/auth/login", {
-        email,
-        password,
-      });
-
-      // ✅ save token + user
+      const res = await API.post("/auth/login", { email, password });
       saveAuth(res.data);
-
-      // ✅ go to dashboard
       navigate("/dashboard");
     } catch (err) {
-      setError(
-        err.response?.data?.message || "Invalid email or password"
-      );
-    }
+      setError(err.response?.data?.message || "Invalid email or password");
+    } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen grid md:grid-cols-2 bg-gradient-to-br from-pink-50 via-rose-50 to-white">
-
-      {/* LEFT – INFO */}
-      <div className="hidden md:flex flex-col justify-center px-16 animate-fadeIn">
-        <h1 className="text-4xl font-semibold text-gray-800 mb-4">
-          Welcome Back 🌸
-        </h1>
-        <p className="text-gray-600 text-lg leading-relaxed">
-          Continue your journey toward understanding PCOS, tracking your
-          health, and making informed lifestyle choices.
-        </p>
+    <div className="min-h-screen grid md:grid-cols-2" style={{ background: "var(--bg-main)" }}>
+      {/* LEFT */}
+      <div className="hidden md:flex flex-col justify-center px-16" style={{ background: "linear-gradient(135deg, var(--primary), var(--accent))" }}>
+        <motion.div initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }}>
+          <div className="text-5xl mb-6">🌸</div>
+          <h1 className="text-4xl font-bold text-white mb-4">Welcome Back</h1>
+          <p className="text-white/80 text-lg leading-relaxed mb-10">Continue your PCOS journey with personalized insights and AI-powered assessments.</p>
+          <div className="space-y-3">
+            {["AI-powered PCOS risk assessment", "Personalized health insights", "Downloadable PDF reports"].map((item, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-full bg-white/30 flex items-center justify-center text-white text-xs">✓</div>
+                <p className="text-white/90 text-sm">{item}</p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
       </div>
 
-      {/* RIGHT – LOGIN FORM */}
+      {/* RIGHT */}
       <div className="flex items-center justify-center px-6">
-        <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-xl animate-slideUp">
-
-          <h2 className="text-3xl font-semibold text-gray-800 mb-2">
-            Login to OvaCare
-          </h2>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md p-10 rounded-3xl shadow-xl"
+          style={{ background: "var(--card-bg)", border: "1px solid var(--border-color)" }}>
+          <div className="mb-8">
+            <Link to="/" className="text-sm font-semibold" style={{ color: "var(--primary)" }}>← OvaCare 🌸</Link>
+            <h2 className="text-3xl font-bold mt-4 mb-1" style={{ color: "var(--text-main)" }}>Login to OvaCare</h2>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>Enter your credentials to continue</p>
+          </div>
 
           {error && (
-            <p className="text-red-500 text-sm mb-4">{error}</p>
+            <div className="p-3 rounded-xl mb-5 text-sm" style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)", color: "#dc2626" }}>
+              ⚠️ {error}
+            </div>
           )}
 
           <form className="space-y-5" onSubmit={handleLogin}>
             <div>
-              <label className="text-sm text-gray-600">Email</label>
-              <input
-                type="email"
-                className="input"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>Email Address</label>
+              <input type="email" placeholder="you@example.com" className="w-full rounded-xl px-4 py-3 text-sm outline-none transition"
+                style={{ background: "var(--bg-main)", border: "1px solid var(--border-color)", color: "var(--text-main)" }}
+                value={email} onChange={e => setEmail(e.target.value)} required
+                onFocus={e => e.target.style.borderColor = "var(--primary)"}
+                onBlur={e => e.target.style.borderColor = "var(--border-color)"} />
             </div>
-
             <div>
-              <label className="text-sm text-gray-600">Password</label>
-              <input
-                type="password"
-                className="input"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>Password</label>
+              <input type="password" placeholder="Your password" className="w-full rounded-xl px-4 py-3 text-sm outline-none transition"
+                style={{ background: "var(--bg-main)", border: "1px solid var(--border-color)", color: "var(--text-main)" }}
+                value={password} onChange={e => setPassword(e.target.value)} required
+                onFocus={e => e.target.style.borderColor = "var(--primary)"}
+                onBlur={e => e.target.style.borderColor = "var(--border-color)"} />
             </div>
-
-            <button className="btn-primary w-full mt-2">
-              Login
-            </button>
+            <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} type="submit" disabled={loading}
+              className="w-full py-3.5 rounded-2xl text-white font-bold shadow-lg transition mt-2"
+              style={{ background: loading ? "var(--text-muted)" : "linear-gradient(135deg, var(--primary), var(--accent))" }}>
+              {loading ? "Logging in…" : "Login →"}
+            </motion.button>
           </form>
 
-          <p className="text-sm text-gray-500 text-center mt-6">
-            Don’t have an account?{" "}
-            <Link to="/register" className="text-pink-600 hover:underline">
-              Register here
-            </Link>
+          <p className="text-sm text-center mt-6" style={{ color: "var(--text-muted)" }}>
+            Don't have an account?{" "}
+            <Link to="/register" className="font-semibold hover:underline" style={{ color: "var(--primary)" }}>Register here</Link>
           </p>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

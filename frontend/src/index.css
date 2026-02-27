@@ -13,58 +13,83 @@
   }
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.8s ease-out forwards;
+/* ================================
+   🎨 THEME UTILITY CLASSES
+   ================================ */
+
+/* Backgrounds */
+.bg-theme {
+  background-color: var(--bg-main);
 }
 
-@keyframes pulseSlow {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+.bg-card {
+  background-color: var(--card-bg);
 }
 
-.animate-pulseSlow {
-  animation: pulseSlow 6s ease-in-out infinite;
+/* Text */
+.text-theme {
+  color: var(--text-main);
 }
 
-.btn-primary {
-  @apply px-6 py-3 rounded-full bg-pink-500 text-white hover:bg-pink-600 transition-all;
+.text-muted {
+  color: var(--text-muted);
 }
 
-.btn-secondary {
-  @apply px-6 py-3 rounded-full border border-pink-400 text-pink-600 hover:bg-pink-50 transition-all;
+.text-primary {
+  color: var(--primary);
 }
 
-.card {
-  @apply bg-white p-6 rounded-2xl shadow hover:shadow-xl hover:-translate-y-1 transition;
-}
-
-/* INPUT STYLE */
-.input {
-  @apply w-full px-4 py-3 rounded-xl border border-gray-300 
-  focus:outline-none focus:ring-2 focus:ring-pink-300 
-  focus:border-pink-400 transition;
-}
-
-/* ANIMATIONS */
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-slideUp {
-  animation: slideUp 0.7s ease-out forwards;
-}
-
-/* language toggle smooth */
-.lang-toggle {
+/* Buttons */
+.btn-theme {
+  background-color: var(--primary);
+  color: white;
+  border-radius: 9999px;
+  padding: 0.6rem 1.5rem;
+  font-weight: 600;
   transition: all 0.3s ease;
 }
-.lang-toggle:hover {
-  transform: scale(1.05);
+
+.btn-theme:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 10px 30px rgba(197, 124, 138, 0.4);
+}
+
+/* Outline button */
+.btn-outline {
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  border-radius: 9999px;
+  padding: 0.6rem 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.btn-outline:hover {
+  background-color: var(--primary);
+  color: white;
+}
+
+/* Inputs */
+.input-theme {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.75rem;
+  transition: all 0.25s ease;
+}
+
+.input-theme:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(197, 124, 138, 0.3);
+}
+
+/* Card animation */
+.card-animate {
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+}
+
+.card-animate:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-soft);
 }
