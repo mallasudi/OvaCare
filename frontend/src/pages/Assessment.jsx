@@ -43,6 +43,8 @@ export default function Assessment() {
 
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [formError, setFormError] = useState("");
   const navigate = useNavigate();
   const { user } = useAuth();
   const token = localStorage.getItem("token");
@@ -58,21 +60,73 @@ export default function Assessment() {
     return (form.weight_kg / (heightM ** 2)).toFixed(2);
   }, [form.weight_kg, heightM]);
 
-  const update = (k) => (e) =>
+  const update = (k) => (e) => {
     setForm({ ...form, [k]: e.target.value });
+    if (errors[k]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[k];
+        return next;
+      });
+    }
+    if (formError) setFormError("");
+  };
+
+  const requiredFields = [
+    "sleep_hours",
+    "caffeine_intake",
+    "cycle_length",
+    "flow_duration",
+    "last_period_date",
+    "height_feet",
+    "height_inches",
+    "weight_kg",
+  ];
+
+  const validateForm = () => {
+    const missing = requiredFields.filter((k) => {
+      const value = form[k];
+      return value === "" || value === null || value === undefined;
+    });
+
+    if (missing.length > 0) {
+      const nextErrors = missing.reduce((acc, key) => {
+        acc[key] = true;
+        return acc;
+      }, {});
+      setErrors(nextErrors);
+      setFormError("Please fill all fields.");
+      return false;
+    }
+
+    setErrors({});
+    setFormError("");
+    return true;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Gate: only allow result if logged in
+    if (!validateForm()) return;
+
+    // If not authenticated, save payload to sessionStorage and redirect to login
     if (!isAuthenticated) {
-      if (user) {
-        // Has an account but session expired — go to login
-        navigate("/login");
-      } else {
-        // No account at all — go to register
-        navigate("/register");
-      }
+      const payload = {
+        bmi: Number(bmi),
+        cycle_length: Number(form.cycle_length),
+        acne: form.acne !== "None" ? 1 : 0,
+        hair_growth: form.hair_growth !== "None" ? 1 : 0,
+        weight_gain: form.weight_gain !== "None" ? 1 : 0,
+        form_data: {
+          ...form,
+          bmi: bmi || "N/A",
+          height_m: heightM || "N/A",
+        },
+      };
+
+      console.log("[ASSESSMENT] Saving pending assessment to sessionStorage");
+      sessionStorage.setItem("pendingAssessment", JSON.stringify(payload));
+      navigate("/login");
       return;
     }
 
@@ -81,13 +135,11 @@ export default function Assessment() {
 
     try {
       const payload = {
-        // ML features for the prediction model
         bmi: Number(bmi),
         cycle_length: Number(form.cycle_length),
         acne: form.acne !== "None" ? 1 : 0,
         hair_growth: form.hair_growth !== "None" ? 1 : 0,
         weight_gain: form.weight_gain !== "None" ? 1 : 0,
-        // Full form data saved to the report
         form_data: {
           ...form,
           bmi: bmi || "N/A",
@@ -95,12 +147,19 @@ export default function Assessment() {
         },
       };
 
+      console.log("[ASSESSMENT] Sending authenticated prediction payload");
       const res = await API.post("/pcos/predict", payload);
+      console.log("[ASSESSMENT] Prediction success:", res.data);
       setResult(res.data);
-      // Navigate to report page after short delay so user can see the toast
-      setTimeout(() => navigate("/report"), 1800);
+      // Navigate to the specific report page after a short delay
+      const rid = res.data.reportId;
+      setTimeout(() => navigate(rid ? `/report/${rid}` : "/report"), 1800);
     } catch (err) {
-      console.error(err);
+      console.error("[ASSESSMENT] Prediction error:", {
+        message: err.message,
+        status: err.response?.status,
+        data: err.response?.data,
+      });
       alert("PCOS prediction failed. Please try again.");
     } finally {
       setLoading(false);
@@ -184,9 +243,9 @@ export default function Assessment() {
             {/* BODY METRICS */}
             <Section title="📐 Body Metrics" subtitle="Your height and weight to calculate BMI" accent="#3b82f6">
               <Grid>
-                <Input label="Weight (kg)" type="number" value={form.weight_kg} onChange={update("weight_kg")} />
-                <Input label="Height (feet)" type="number" value={form.height_feet} onChange={update("height_feet")} />
-                <Input label="Height (inches)" type="number" value={form.height_inches} onChange={update("height_inches")} />
+                <Input label="Weight (kg)" type="number" value={form.weight_kg} onChange={update("weight_kg")} error={errors.weight_kg} />
+                <Input label="Height (feet)" type="number" value={form.height_feet} onChange={update("height_feet")} error={errors.height_feet} />
+                <Input label="Height (inches)" type="number" value={form.height_inches} onChange={update("height_inches")} error={errors.height_inches} />
               </Grid>
               <div className="mt-4 p-4 rounded-2xl text-sm font-medium flex flex-wrap gap-6"
                 style={{ background: "var(--bg-main)", color: "var(--text-muted)", border: "1px solid var(--border-color)" }}>
@@ -203,8 +262,8 @@ export default function Assessment() {
             {/* LIFESTYLE */}
             <Section title="🌿 Lifestyle" subtitle="Daily habits that influence hormonal health" accent="#22c55e">
               <Grid>
-                <Input label="Sleep hours/day" type="number" value={form.sleep_hours} onChange={update("sleep_hours")} />
-                <Input label="Caffeine intake/day (cups)" type="number" value={form.caffeine_intake} onChange={update("caffeine_intake")} />
+                <Input label="Sleep hours/day" type="number" value={form.sleep_hours} onChange={update("sleep_hours")} error={errors.sleep_hours} />
+                <Input label="Caffeine intake/day (cups)" type="number" value={form.caffeine_intake} onChange={update("caffeine_intake")} error={errors.caffeine_intake} />
                 <Select label="Stress level" value={form.stress_level} onChange={update("stress_level")} options={stress} />
                 <Select label="Exercise frequency" value={form.exercise_frequency} onChange={update("exercise_frequency")} options={exercise} />
                 <Select label="Smoking" value={form.smoking} onChange={update("smoking")} options={yesNo} />
@@ -217,10 +276,10 @@ export default function Assessment() {
             <Section title="🩸 Menstrual Health" subtitle="Your cycle patterns and symptoms" accent="#ec4899">
               <Grid>
                 <Select label="Cycle regularity" value={form.cycle_regularity} onChange={update("cycle_regularity")} options={regularity} />
-                <Input label="Cycle length (days)" type="number" value={form.cycle_length} onChange={update("cycle_length")} />
-                <Input label="Flow duration (days)" type="number" value={form.flow_duration} onChange={update("flow_duration")} />
+                <Input label="Cycle length (days)" type="number" value={form.cycle_length} onChange={update("cycle_length")} error={errors.cycle_length} />
+                <Input label="Flow duration (days)" type="number" value={form.flow_duration} onChange={update("flow_duration")} error={errors.flow_duration} />
                 <Select label="Cramps severity" value={form.severe_cramps} onChange={update("severe_cramps")} options={cramps} />
-                <Input label="Last period date" type="date" value={form.last_period_date} onChange={update("last_period_date")} />
+                <Input label="Last period date" type="date" value={form.last_period_date} onChange={update("last_period_date")} error={errors.last_period_date} />
               </Grid>
             </Section>
 
@@ -235,6 +294,12 @@ export default function Assessment() {
                 <Select label="Contraceptive pill usage" value={form.contraceptive_pill_usage} onChange={update("contraceptive_pill_usage")} options={yesNo} />
               </Grid>
             </Section>
+
+            {formError && (
+              <p className="text-sm font-semibold" style={{ color: "#ef4444" }}>
+                {formError}
+              </p>
+            )}
 
             <motion.button
               whileHover={{ scale: 1.02, y: -2 }}
@@ -319,7 +384,7 @@ function Grid({ children }) {
   return <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{children}</div>;
 }
 
-function Input({ label, ...props }) {
+function Input({ label, error, ...props }) {
   return (
     <div>
       <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>{label}</label>
@@ -327,15 +392,16 @@ function Input({ label, ...props }) {
         className="w-full rounded-xl px-4 py-2.5 text-sm outline-none transition-all duration-200"
         style={{
           background: "var(--bg-main)",
-          border: "1.5px solid var(--border-color)",
+          border: `1.5px solid ${error ? "#ef4444" : "var(--border-color)"}`,
           color: "var(--text-main)",
         }}
+        aria-invalid={!!error}
         onFocus={e => {
           e.target.style.borderColor = "var(--primary)";
           e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent)";
         }}
         onBlur={e => {
-          e.target.style.borderColor = "var(--border-color)";
+          e.target.style.borderColor = error ? "#ef4444" : "var(--border-color)";
           e.target.style.boxShadow = "none";
         }}
         {...props}
