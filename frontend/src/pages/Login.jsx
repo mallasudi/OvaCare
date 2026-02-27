@@ -1,5 +1,5 @@
 ﻿import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import API from "../utils/api";
 import { saveAuth } from "../utils/auth";
@@ -12,6 +12,12 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hasPendingAssessment, setHasPendingAssessment] = useState(false);
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pendingAssessment");
+    setHasPendingAssessment(!!pending);
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -79,6 +85,12 @@ export default function Login() {
             <h2 className="text-3xl font-bold mt-4 mb-1" style={{ color: "var(--text-main)" }}>Login to OvaCare</h2>
             <p className="text-sm" style={{ color: "var(--text-muted)" }}>Enter your credentials to continue</p>
           </div>
+
+          {hasPendingAssessment && (
+            <div className="p-3 rounded-xl mb-5 text-sm" style={{ background: "rgba(59, 130, 246, 0.08)", border: "1px solid rgba(59, 130, 246, 0.2)", color: "#3b82f6" }}>
+              ℹ️ You have a pending assessment. Login to get your results!
+            </div>
+          )}
 
           {error && (
             <div className="p-3 rounded-xl mb-5 text-sm" style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)", color: "#dc2626" }}>

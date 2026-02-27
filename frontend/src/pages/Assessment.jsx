@@ -197,6 +197,56 @@ export default function Assessment() {
           </p>
         </motion.div>
 
+        {/* Authentication Status Banner */}
+        {!isAuthenticated && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 rounded-2xl"
+            style={{
+              background: "linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.05))",
+              border: "2px solid rgba(59, 130, 246, 0.2)",
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">ℹ️</span>
+              <div className="flex-1">
+                <p className="font-bold text-sm mb-1" style={{ color: "var(--text-main)" }}>
+                  Public Assessment Mode
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  You're not logged in. After completing this form, you'll be redirected to login/register. 
+                  Your assessment data will be saved securely and processed after you log in.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {isAuthenticated && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 rounded-2xl"
+            style={{
+              background: "linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(74, 222, 128, 0.05))",
+              border: "2px solid rgba(34, 197, 94, 0.2)",
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">✅</span>
+              <div className="flex-1">
+                <p className="font-bold text-sm mb-1" style={{ color: "var(--text-main)" }}>
+                  Logged in as {user?.name}
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Your assessment results will be saved to your profile and accessible in your dashboard.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {/* Progress Steps */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -324,7 +374,7 @@ export default function Assessment() {
                   </svg>
                   Analyzing your data...
                 </span>
-              ) : "🔍 Get My PCOS Risk Result"}
+              ) : isAuthenticated ? "🔍 Get My PCOS Risk Result" : "📋 Save & Continue to Login"}
             </motion.button>
           </form>
 
