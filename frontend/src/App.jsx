@@ -1,5 +1,6 @@
 import { Routes, Route, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { useAuth } from "./context/AuthContext";
 import HealthJournal from "./pages/HealthJournal";
 import PeriodTracker from "./pages/PeriodTracker";
 import Consultation from "./pages/Consultation";
@@ -12,6 +13,7 @@ import Assessment from "./pages/Assessment";
 import PCOS from "./pages/PCOS";
 import Consult from "./pages/Consultation";
 import PCOSReport from "./pages/PCOSReport";
+import PrivateRoute from "./router/PrivateRoute";
 
 function AppContent() {
   const location = useLocation();
@@ -24,27 +26,36 @@ function AppContent() {
     localStorage.setItem("lang", lang);
   }, [lang]);
 
-  // 🔥 ROUTES WHERE NAVBAR SHOULD BE HIDDEN
-  const privateRoutes = ["/dashboard", "/assessment", "/report", "/journal", "/period", "/consultation"];
+  const { user } = useAuth();
+  const token = localStorage.getItem("token");
+  const isAuthenticated = !!user && !!token;
 
-  const hideNavbar = privateRoutes.includes(location.pathname);
+  // Hide public Navbar on dashboard/private routes ONLY when the user is logged in.
+  // /assessment is intentionally excluded — it always shows the public Navbar.
+  const dashboardRoutes = ["/dashboard", "/journal", "/period", "/consultation", "/report"];
+  const hideNavbar = dashboardRoutes.includes(location.pathname) && isAuthenticated;
 
   return (
     <>
       {!hideNavbar && <Navbar lang={lang} setLang={setLang} />}
 
       <Routes>
+        {/* Public routes */}
         <Route path="/" element={<Home lang={lang} />} />
         <Route path="/login" element={<Login lang={lang} />} />
         <Route path="/register" element={<Register lang={lang} />} />
-        <Route path="/dashboard" element={<Dashboard lang={lang} />} />
-        <Route path="/assessment" element={<Assessment lang={lang} />} />
         <Route path="/pcos" element={<PCOS />} />
         <Route path="/consult" element={<Consult lang={lang} />} />
-        <Route path="/journal" element={<HealthJournal />} />
-        <Route path="/period" element={<PeriodTracker />} />
-        <Route path="/consultation" element={<Consultation />} />
-        <Route path="/report" element={<PCOSReport />} />
+
+        {/* Assessment is public – auth gate is inside the page on submit */}
+        <Route path="/assessment" element={<Assessment lang={lang} />} />
+
+        {/* Protected routes – require login */}
+        <Route path="/dashboard" element={<PrivateRoute><Dashboard lang={lang} /></PrivateRoute>} />
+        <Route path="/journal" element={<PrivateRoute><HealthJournal /></PrivateRoute>} />
+        <Route path="/period" element={<PrivateRoute><PeriodTracker /></PrivateRoute>} />
+        <Route path="/consultation" element={<PrivateRoute><Consultation /></PrivateRoute>} />
+        <Route path="/report" element={<PrivateRoute><PCOSReport /></PrivateRoute>} />
       </Routes>
     </>
   );

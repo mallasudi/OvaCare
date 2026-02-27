@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import API from "../utils/api";
-import BottomNav from "../components/BottomNav";
+import { useAuth } from "../context/AuthContext";
 
 const yesNo = ["No", "Yes"];
 const severity = ["None", "Mild", "Moderate", "Severe"];
@@ -44,6 +44,9 @@ export default function Assessment() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const token = localStorage.getItem("token");
+  const isAuthenticated = !!user && !!token;
 
   const heightM = useMemo(() => {
     const inches = form.height_feet * 12 + Number(form.height_inches || 0);
@@ -60,6 +63,19 @@ export default function Assessment() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Gate: only allow result if logged in
+    if (!isAuthenticated) {
+      if (user) {
+        // Has an account but session expired — go to login
+        navigate("/login");
+      } else {
+        // No account at all — go to register
+        navigate("/register");
+      }
+      return;
+    }
+
     setLoading(true);
     setResult(null);
 
@@ -282,7 +298,7 @@ export default function Assessment() {
           )}
         </motion.div>
       </div>
-      <BottomNav />
+      {/* Assessment is a public page — no BottomNav */}
     </div>
   );
 }
