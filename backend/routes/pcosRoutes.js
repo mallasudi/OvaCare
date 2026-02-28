@@ -1,5 +1,5 @@
 import express from "express";
-import { predictPCOS, predictPCOSPublic, getMyPCOSReports, getReport } from "../controllers/pcosController.js";
+import { predictPCOS, predictPCOSPublic, getMyPCOSReports, getLatestReport, getReport } from "../controllers/pcosController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
@@ -9,6 +9,7 @@ router.post("/predict-public", predictPCOSPublic);
 
 // Authenticated endpoints
 router.post("/predict", authMiddleware, predictPCOS);
+router.get("/my-reports/latest", authMiddleware, getLatestReport); // must be before /my-reports
 router.get("/my-reports", authMiddleware, getMyPCOSReports);
 router.get("/report/:reportId", authMiddleware, getReport);
 

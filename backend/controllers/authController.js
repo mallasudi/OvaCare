@@ -122,6 +122,26 @@ export const updateProfile = async (req, res) => {
   }
 };
 
+/* VERIFY TOKEN */
+export const verifyToken = async (req, res) => {
+  try {
+    // This endpoint requires valid token (authMiddleware will reject invalid ones)
+    // If we reached here, the token is valid
+    const user = await User.findById(req.user.userId).select("-password");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      profilePicture: user.profilePicture || "",
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Token verification failed" });
+  }
+};
+
 /* CHANGE PASSWORD */
 export const changePassword = async (req, res) => {
   try {

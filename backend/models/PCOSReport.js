@@ -6,6 +6,12 @@ const PCOSReportSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
+  report_id: {
+    type: String,
+    unique: true,
+    required: true,
+    default: () => `PCOS-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+  },
   form_data: {
     type: Object,
     required: true,
