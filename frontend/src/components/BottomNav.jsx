@@ -9,7 +9,7 @@ export default function BottomNav() {
     { path: "/dashboard", icon: "🏠", label: "Home" },
     { path: "/journal", icon: "📔", label: "Journal" },
     { path: "/period", icon: "🩸", label: "Cycle" },
-    { path: "/consultation", icon: "📩", label: "Consult" },
+    { path: "/dashboard/consult", icon: "📩", label: "Consult" },
   ];
 
   return (
