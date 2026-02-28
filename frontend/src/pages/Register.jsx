@@ -1,25 +1,65 @@
 ﻿import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import API from "../utils/api";
+import { saveAuth } from "../utils/auth";
+import { useAuth } from "../context/AuthContext";
 
 export default function Register() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hasPendingAssessment, setHasPendingAssessment] = useState(false);
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pendingAssessment");
+    setHasPendingAssessment(!!pending);
+  }, []);
 
   const handleRegister = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError("");
     try {
       await API.post("/auth/register", { name, email, password });
-      navigate("/login");
+      
+      // After successful registration, automatically log in
+      try {
+        const loginRes = await API.post("/auth/login", { email, password });
+        saveAuth(loginRes.data);
+        login(loginRes.data.user);
+
+        // Check if there's a pending assessment from public form
+        const pending = sessionStorage.getItem("pendingAssessment");
+        if (pending) {
+          console.log("[REGISTER] Found pending assessment, submitting...");
+          try {
+            const payload = JSON.parse(pending);
+            const predictionRes = await API.post("/pcos/predict", payload);
+            console.log("[REGISTER] Pending assessment submitted:", predictionRes.data);
+            sessionStorage.removeItem("pendingAssessment");
+            const rid = predictionRes.data.reportId;
+            navigate(rid ? `/report/${rid}` : "/report");
+          } catch (err) {
+            console.error("[REGISTER] Failed to submit pending assessment:", err);
+            navigate("/dashboard");
+          }
+        } else {
+          navigate("/dashboard");
+        }
+      } catch (loginErr) {
+        console.error("[REGISTER] Auto-login failed:", loginErr);
+        navigate("/login");
+      }
     } catch (err) {
-      setError("Registration failed. Please try again.");
-    } finally { setLoading(false); }
+      setError(err.response?.data?.message || "Registration failed. Please try again.");
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   return (
@@ -34,6 +74,12 @@ export default function Register() {
             <h2 className="text-3xl font-bold mt-4 mb-1" style={{ color: "var(--text-main)" }}>Create Your Account 🌷</h2>
             <p className="text-sm" style={{ color: "var(--text-muted)" }}>Start your PCOS awareness journey with OvaCare</p>
           </div>
+
+          {hasPendingAssessment && (
+            <div className="p-3 rounded-xl mb-5 text-sm" style={{ background: "rgba(59, 130, 246, 0.08)", border: "1px solid rgba(59, 130, 246, 0.2)", color: "#3b82f6" }}>
+              ℹ️ You have a pending assessment. Register to get your results!
+            </div>
+          )}
 
           {error && (
             <div className="p-3 rounded-xl mb-5 text-sm" style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.2)", color: "#dc2626" }}>

@@ -13,17 +13,11 @@ export default function Home({ lang = "en", setLang }) {
   const t = translations[lang] || translations.en;
   const np = lang === "np";
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
 
   const handleAssessment = () => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      navigate("/assessment");
-    } else if (user) {
-      navigate("/login");
-    } else {
-      navigate("/register");
-    }
+    // Always allow navigation to /assessment page - users can fill it out logged in or not
+    navigate("/assessment");
   };
 
   const symptoms = np

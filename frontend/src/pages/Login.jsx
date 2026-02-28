@@ -1,4 +1,4 @@
-﻿import { Link, useNavigate } from "react-router-dom";
+﻿import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import API from "../utils/api";
@@ -7,6 +7,8 @@ import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo = location.state?.from || "/dashboard";
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,10 +48,12 @@ export default function Login() {
             status: err.response?.status,
             data: err.response?.data,
           });
-          navigate("/dashboard");
+          // Clear stale pending assessment and go to redirect target
+          sessionStorage.removeItem("pendingAssessment");
+          navigate(redirectTo);
         }
       } else {
-        navigate("/dashboard");
+        navigate(redirectTo);
       }
     } catch (err) {
       setError(err.response?.data?.message || "Invalid email or password");
