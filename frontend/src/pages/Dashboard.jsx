@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import BottomNav from "../components/BottomNav";
-import { getUser } from "../utils/auth";
+import ProfileDropdown from "../components/ProfileDropdown";
+import { useAuth } from "../context/AuthContext";
 import { motion } from "framer-motion";
 import { Line } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
@@ -25,14 +25,14 @@ const riskColors = {
 };
 
 export default function Dashboard() {
-  const user = getUser();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [latestReport, setLatestReport] = useState(null);
   const [loadingReport, setLoadingReport] = useState(true);
 
   useEffect(() => {
-    API.get("/pcos/my-reports")
-      .then(res => { if (res.data?.length > 0) setLatestReport(res.data[0]); })
+    API.get("/pcos/my-reports/latest")
+      .then(res => { if (res.data) setLatestReport(res.data); })
       .catch(() => {})
       .finally(() => setLoadingReport(false));
   }, []);
@@ -96,16 +96,7 @@ export default function Dashboard() {
                 {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
               </p>
             </div>
-            <motion.div
-              whileHover={{ scale: 1.1 }}
-              className="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold shadow-lg cursor-default"
-              style={{
-                background: "linear-gradient(135deg, var(--primary), var(--accent))",
-                boxShadow: "0 4px 16px color-mix(in srgb, var(--primary) 40%, transparent)",
-              }}
-            >
-              {user?.name?.[0]?.toUpperCase() || "U"}
-            </motion.div>
+            <ProfileDropdown user={user} />
           </div>
         </div>
 
@@ -311,7 +302,6 @@ export default function Dashboard() {
         </motion.div>
 
       </div>
-      <BottomNav />
     </motion.div>
   );
 }

@@ -46,9 +46,7 @@ export default function Assessment() {
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState("");
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const token = localStorage.getItem("token");
-  const isAuthenticated = !!user && !!token;
+  const { user, isReady, isAuthenticated } = useAuth();
 
   const heightM = useMemo(() => {
     const inches = form.height_feet * 12 + Number(form.height_inches || 0);
@@ -109,23 +107,42 @@ export default function Assessment() {
 
     if (!validateForm()) return;
 
-    // If not authenticated, save payload to sessionStorage and redirect to login
-    if (!isAuthenticated) {
-      const payload = {
-        bmi: Number(bmi),
-        cycle_length: Number(form.cycle_length),
-        acne: form.acne !== "None" ? 1 : 0,
-        hair_growth: form.hair_growth !== "None" ? 1 : 0,
-        weight_gain: form.weight_gain !== "None" ? 1 : 0,
-        form_data: {
-          ...form,
-          bmi: bmi || "N/A",
-          height_m: heightM || "N/A",
-        },
-      };
+    // Severity scale: None=0, Mild=1, Moderate=2, Severe=3
+    const severityMap = { None: 0, Mild: 1, Moderate: 2, Severe: 3 };
+    const daysSince = form.last_period_date
+      ? Math.max(0, Math.round((Date.now() - new Date(form.last_period_date).getTime()) / 86400000))
+      : 0;
+    const ml_features_shared = {
+      sleep_hours:            Number(form.sleep_hours) || 0,
+      stress_level:           { Low: 0, Medium: 1, High: 2 }[form.stress_level] ?? 1,
+      caffeine_intake:        Number(form.caffeine_intake) || 0,
+      exercise_frequency:     { None: 0, "1-2 days": 1, "3-4 days": 2, "5+ days": 3 }[form.exercise_frequency] ?? 0,
+      smoking:                form.smoking === "Yes" ? 1 : 0,
+      alcohol:                form.alcohol === "Yes" ? 1 : 0,
+      diet_quality:           { Poor: 0, Average: 1, Good: 2 }[form.diet_quality] ?? 1,
+      cycle_regularity:       form.cycle_regularity === "Irregular" ? 1 : 0,
+      cycle_length:           Number(form.cycle_length) || 0,
+      flow_duration:          Number(form.flow_duration) || 0,
+      severe_cramps:          { Mild: 0, Moderate: 1, Severe: 2 }[form.severe_cramps] ?? 0,
+      hair_growth:            severityMap[form.hair_growth] ?? 0,
+      acne:                   severityMap[form.acne] ?? 0,
+      hair_fall:              severityMap[form.hair_fall] ?? 0,
+      dark_skin_patches:      severityMap[form.dark_skin_patches] ?? 0,
+      weight_gain:            severityMap[form.weight_gain] ?? 0,
+      height:                 Number(heightM) || 0,
+      weight:                 Number(form.weight_kg) || 0,
+      bmi:                    Number(bmi) || 0,
+      days_since_last_period: daysSince,
+    };
 
+    // If not authenticated, save full payload to sessionStorage and redirect to login
+    if (!isAuthenticated) {
+      const pendingPayload = {
+        ml_features: ml_features_shared,
+        form_data: { ...form, bmi: bmi || "N/A", height_m: heightM || "N/A" },
+      };
       console.log("[ASSESSMENT] Saving pending assessment to sessionStorage");
-      sessionStorage.setItem("pendingAssessment", JSON.stringify(payload));
+      sessionStorage.setItem("pendingAssessment", JSON.stringify(pendingPayload));
       navigate("/login");
       return;
     }
@@ -135,11 +152,7 @@ export default function Assessment() {
 
     try {
       const payload = {
-        bmi: Number(bmi),
-        cycle_length: Number(form.cycle_length),
-        acne: form.acne !== "None" ? 1 : 0,
-        hair_growth: form.hair_growth !== "None" ? 1 : 0,
-        weight_gain: form.weight_gain !== "None" ? 1 : 0,
+        ml_features: ml_features_shared,
         form_data: {
           ...form,
           bmi: bmi || "N/A",
@@ -147,7 +160,7 @@ export default function Assessment() {
         },
       };
 
-      console.log("[ASSESSMENT] Sending authenticated prediction payload");
+      console.log("[ASSESSMENT] Sending authenticated prediction payload", ml_features_shared);
       const res = await API.post("/pcos/predict", payload);
       console.log("[ASSESSMENT] Prediction success:", res.data);
       setResult(res.data);
@@ -160,7 +173,13 @@ export default function Assessment() {
         status: err.response?.status,
         data: err.response?.data,
       });
-      alert("PCOS prediction failed. Please try again.");
+      let errorMsg = "PCOS prediction failed. Please try again.";
+      if (err.response?.status === 503) {
+        errorMsg = "Assessment service is temporarily unavailable. Please try again later.";
+      } else if (err.response?.data?.error === "Connection refused") {
+        errorMsg = "Unable to connect to the assessment service. Please ensure the service is running and try again.";
+      }
+      alert(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -198,7 +217,7 @@ export default function Assessment() {
         </motion.div>
 
         {/* Authentication Status Banner */}
-        {!isAuthenticated && (
+        {isReady && !isAuthenticated && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -223,7 +242,7 @@ export default function Assessment() {
           </motion.div>
         )}
 
-        {isAuthenticated && (
+        {isReady && isAuthenticated && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}

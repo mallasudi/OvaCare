@@ -83,31 +83,69 @@ export default function PCOSReport() {
 
   const buildPDF = (report) => {
     const doc = new jsPDF();
+    let y = 15;
 
+    // Header - Title
     doc.setFontSize(20);
     doc.setTextColor(115, 44, 63);
-    doc.text("OvaCare – PCOS Risk Assessment Report", 15, 20);
+    doc.text("OvaCare – PCOS Risk Assessment Report", 15, y);
+    y += 10;
 
-    doc.setFontSize(12);
-    doc.setTextColor(100);
-    doc.text(`Date: ${new Date(report.created_at).toDateString()}`, 15, 30);
+    // User Information Section
+    if (report.user_id) {
+      doc.setFontSize(11);
+      doc.setTextColor(80);
+      doc.text("Report Information", 15, y);
+      y += 6;
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Report ID: ${report.report_id || report._id}`, 15, y);
+      y += 5;
+      doc.text(`Patient Name: ${report.user_id.name || "N/A"}`, 15, y);
+      y += 5;
+      doc.text(`Email: ${report.user_id.email || "N/A"}`, 15, y);
+      y += 5;
+      const reportDate = new Date(report.created_at).toLocaleString("en-US", { 
+        year: "numeric", 
+        month: "long", 
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+      doc.text(`Report Date: ${reportDate}`, 15, y);
+      y += 10;
+      
+      doc.setDrawColor(200);
+      doc.line(15, y - 3, 195, y - 3);
+      y += 5;
+    }
 
+    // Risk Level
     doc.setFontSize(16);
     doc.setTextColor(0);
-    doc.text(`Risk Level: ${report.risk_level}`, 15, 45);
+    doc.text(`Risk Level: ${report.risk_level}`, 15, y);
+    y += 8;
+    
     doc.setFontSize(11);
     doc.setTextColor(80);
-    doc.text(`${report.risk_message}`, 15, 55);
+    doc.text(`${report.risk_message}`, 15, y);
+    y += 10;
 
-    let y = 70;
+    // Assessment Details
     if (report.form_data) {
       doc.setFontSize(14);
       doc.setTextColor(0);
-      doc.text("Assessment Details:", 15, y); y += 8;
+      doc.text("Assessment Details:", 15, y);
+      y += 8;
+      
       doc.setFontSize(10);
       doc.setTextColor(60);
       Object.entries(report.form_data).forEach(([k, v]) => {
-        if (y > 270) { doc.addPage(); y = 20; }
+        if (y > 270) {
+          doc.addPage();
+          y = 20;
+        }
         const label = fieldLabels[k] || k.replace(/_/g, " ");
         doc.text(`${label}: ${v}`, 15, y);
         y += 7;
@@ -222,6 +260,34 @@ export default function PCOSReport() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-5"
               >
+                {/* ── User Information Card ── */}
+                {selected.user_id && (
+                  <div
+                    className="p-5 rounded-2xl border"
+                    style={{ background: "var(--card-bg)", border: "1px solid var(--border-color)" }}
+                  >
+                    <h3 className="font-bold text-sm mb-3" style={{ color: "var(--text-main)" }}>📋 Report Information</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p style={{ color: "var(--text-muted)" }} className="text-xs mb-1">Report ID</p>
+                        <p style={{ color: "var(--text-main)" }} className="font-semibold">{selected.report_id || selected._id?.toString().slice(-8)}</p>
+                      </div>
+                      <div>
+                        <p style={{ color: "var(--text-muted)" }} className="text-xs mb-1">Patient Name</p>
+                        <p style={{ color: "var(--text-main)" }} className="font-semibold">{selected.user_id.name || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p style={{ color: "var(--text-muted)" }} className="text-xs mb-1">Email</p>
+                        <p style={{ color: "var(--text-main)" }} className="font-semibold text-xs break-all">{selected.user_id.email || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p style={{ color: "var(--text-muted)" }} className="text-xs mb-1">Report Date</p>
+                        <p style={{ color: "var(--text-main)" }} className="font-semibold">{new Date(selected.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Risk Result Banner ── */}
                 <div
                   className={`p-6 rounded-3xl bg-gradient-to-r ${cfg.gradient} text-white shadow-xl`}
