@@ -4,6 +4,8 @@ import { useAuth } from "./context/AuthContext";
 import HealthJournal from "./pages/HealthJournal";
 import PeriodTracker from "./pages/PeriodTracker";
 import Consultation from "./pages/Consultation";
+import DashboardConsult from "./pages/DashboardConsult";
+import DashboardLayout from "./components/DashboardLayout";
 import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
@@ -11,7 +13,6 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Assessment from "./pages/Assessment";
 import PCOS from "./pages/PCOS";
-import Consult from "./pages/Consultation";
 import PCOSReport from "./pages/PCOSReport";
 import PrivateRoute from "./router/PrivateRoute";
 import BottomNav from "./components/BottomNav";
@@ -34,11 +35,9 @@ function AppContent() {
     localStorage.setItem("lang", lang);
   }, [lang]);
 
-  const { user } = useAuth();
-  const token = localStorage.getItem("token");
-  const isAuthenticated = !!user && !!token;
+  const { isAuthenticated } = useAuth();
 
-  const dashboardRoutes = ["/dashboard", "/journal", "/period", "/consultation", "/report", "/check"];
+  const dashboardRoutes = ["/dashboard", "/journal", "/period", "/consultation", "/dashboard/consult", "/report", "/check"];
   const hideNavbar = (dashboardRoutes.some(route => location.pathname === route || location.pathname.startsWith(route + "/")) && isAuthenticated);
 
   return (
@@ -51,13 +50,16 @@ function AppContent() {
         <Route path="/login" element={<Login lang={lang} />} />
         <Route path="/register" element={<Register lang={lang} />} />
         <Route path="/pcos" element={<PCOS />} />
-        <Route path="/consult" element={<Consult lang={lang} />} />
+        <Route path="/consult" element={<Consultation />} />
 
         {/* Assessment is public – auth gate is inside the page on submit */}
         <Route path="/assessment" element={<Assessment lang={lang} />} />
 
         {/* Protected routes – require login */}
-        <Route path="/dashboard" element={<PrivateRoute><Dashboard lang={lang} /></PrivateRoute>} />
+        <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
+          <Route index element={<Dashboard lang={lang} />} />
+          <Route path="consult" element={<DashboardConsult />} />
+        </Route>
         <Route path="/check" element={<PrivateRoute><DashboardAssessment /></PrivateRoute>} />
         <Route path="/journal" element={<PrivateRoute><HealthJournal /></PrivateRoute>} />
         <Route path="/period" element={<PrivateRoute><PeriodTracker /></PrivateRoute>} />

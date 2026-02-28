@@ -19,5 +19,12 @@ export const isLoggedIn = () => {
 };
 
 export const logout = () => {
-  localStorage.clear();
+  // Clear only auth-related keys, preserve other settings like lang and theme
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  localStorage.removeItem("latestResult");
+  localStorage.removeItem("profilePicture");
+  localStorage.removeItem("authToken");
+  sessionStorage.removeItem("pendingAssessment");
+  sessionStorage.removeItem("authToken");
 };
