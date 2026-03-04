@@ -1,33 +1,64 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 
+/** All five nav destinations — order determines visual position */
+const NAV_ITEMS = [
+  { path: "/dashboard",    icon: "🏠",  label: "Home"    },
+  { path: "/journal",      icon: "📔",  label: "Journal" },
+  { path: "/assessment",      icon: "🔍",  label: "Check",  fab: true },
+  { path: "/period",          icon: "🩸",  label: "Cycle"   },
+  { path: "/dashboard/consult", icon: "📩",  label: "Consult" },
+];
+
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const items = [
-    { path: "/dashboard", icon: "🏠", label: "Home" },
-    { path: "/journal", icon: "📔", label: "Journal" },
-    { path: "/period", icon: "🩸", label: "Cycle" },
-    { path: "/dashboard/consult", icon: "📩", label: "Consult" },
-  ];
-
   return (
     <div
-      className="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[92%] max-w-md z-50"
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[92%] max-w-lg z-50"
       style={{
-        background: "var(--card-bg)",
-        border: "1px solid var(--border-color)",
+        background:     "var(--card-bg)",
+        border:         "1px solid var(--border-color)",
         backdropFilter: "blur(20px)",
-        borderRadius: "24px",
-        boxShadow: "0 8px 40px rgba(0,0,0,0.12)",
+        borderRadius:   "24px",
+        boxShadow:      "0 8px 40px rgba(0,0,0,0.14)",
       }}
     >
       <div className="flex justify-around items-center px-2 py-3">
-        {items.map((item, i) => {
-          // Insert center button between index 1 and 2
-          const isActive = location.pathname === item.path;
-          const btn = (
+        {NAV_ITEMS.map((item) => {
+          const isActive =
+            location.pathname === item.path ||
+            (item.path === "/dashboard" && location.pathname === "/dashboard");
+
+          /* ── Centre FAB ── */
+          if (item.fab) {
+            return (
+              <motion.button
+                key={item.path}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => navigate(item.path)}
+                className="flex flex-col items-center gap-0.5 -mt-6 relative"
+              >
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl text-white shadow-xl"
+                  style={{ background: "linear-gradient(135deg, var(--primary), var(--accent))" }}
+                >
+                  {item.icon}
+                </div>
+                <span
+                  className="text-[9px] font-semibold"
+                  style={{ color: isActive ? "var(--primary)" : "var(--text-muted)" }}
+                >
+                  {item.label}
+                </span>
+              </motion.button>
+            );
+          }
+
+          /* ── Regular tab ── */
+          return (
             <motion.button
               key={item.path}
               whileTap={{ scale: 0.85 }}
@@ -54,37 +85,6 @@ export default function BottomNav() {
               )}
             </motion.button>
           );
-
-          if (i === 2) {
-            return (
-              <>
-                {/* Center FAB */}
-                <motion.button
-                  key="fab"
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.92 }}
-                  onClick={() => navigate("/check")}
-                  className="flex flex-col items-center gap-0.5 -mt-6 relative"
-                >
-                  <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl text-white shadow-xl"
-                    style={{ background: "linear-gradient(135deg, var(--primary), var(--accent))" }}
-                  >
-                    🔍
-                  </div>
-                  <span
-                    className="text-[9px] font-semibold"
-                    style={{ color: location.pathname === "/check" ? "var(--primary)" : "var(--text-muted)" }}
-                  >
-                    Check
-                  </span>
-                </motion.button>
-                {btn}
-              </>
-            );
-          }
-
-          return btn;
         })}
       </div>
     </div>
