@@ -29,12 +29,21 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [latestReport, setLatestReport] = useState(null);
   const [loadingReport, setLoadingReport] = useState(true);
+  const [cycleAnalytics, setCycleAnalytics] = useState(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(true);
 
   useEffect(() => {
     API.get("/pcos/my-reports/latest")
       .then(res => { if (res.data) setLatestReport(res.data); })
       .catch(() => {})
       .finally(() => setLoadingReport(false));
+  }, []);
+
+  useEffect(() => {
+    API.get("/cycles/analytics")
+      .then(res => setCycleAnalytics(res.data))
+      .catch(() => {})
+      .finally(() => setLoadingAnalytics(false));
   }, []);
 
   const [affirmation] = useState(() => {
@@ -49,6 +58,9 @@ export default function Dashboard() {
 
   const risk = latestReport?.risk_level;
   const riskStyle = riskColors[risk] || riskColors.Moderate;
+
+  const fmtDate = (d) =>
+    new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
   const progressData = {
     labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
@@ -189,7 +201,15 @@ export default function Dashboard() {
               { icon: "💧", label: "Water Intake", value: "5 / 8 glasses", prog: 62, color: "#3b82f6" },
               { icon: "😴", label: "Sleep", value: "7h 20m", prog: 92, color: "#8b5cf6" },
               { icon: "😊", label: "Mood", value: "Calm", prog: 75, color: "#f59e0b" },
-              { icon: "📅", label: "Next Period", value: "In 4 days", prog: 45, color: "#ec4899" },
+              {
+                icon: "📅",
+                label: "Next Period",
+                value: cycleAnalytics?.predicted_next_period
+                  ? fmtDate(cycleAnalytics.predicted_next_period)
+                  : "Log cycles",
+                prog: 45,
+                color: "#ec4899",
+              },
             ].map((item, i) => (
               <motion.div
                 key={i}
@@ -253,6 +273,127 @@ export default function Dashboard() {
           <div className="h-44">
             <Line data={progressData} options={chartOptions} />
           </div>
+        </motion.div>
+
+        {/* ── Next Period Overview ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.32 }}
+          className="mt-5"
+        >
+          <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "var(--text-muted)" }}>
+            🌸 Next Period Overview
+          </h3>
+
+          {loadingAnalytics ? (
+            <div
+              className="p-5 rounded-2xl shadow-sm animate-pulse"
+              style={{ background: "var(--card-bg)", border: "1px solid var(--border-color)" }}
+            >
+              <div className="h-4 rounded-full w-1/2 mb-2" style={{ background: "var(--border-color)" }} />
+              <div className="h-3 rounded-full w-1/3" style={{ background: "var(--border-color)" }} />
+            </div>
+          ) : !cycleAnalytics || cycleAnalytics.total_cycles_count < 2 ? (
+            <motion.div
+              whileHover={{ scale: 1.01 }}
+              className="p-5 rounded-2xl shadow-sm flex gap-4 items-center cursor-pointer"
+              style={{
+                background: "var(--card-bg)",
+                border: "1px solid var(--border-color)",
+                borderLeft: "4px solid var(--primary)",
+              }}
+              onClick={() => navigate("/period")}
+            >
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: "color-mix(in srgb, var(--primary) 12%, transparent)" }}
+              >
+                🩷
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold" style={{ color: "var(--text-main)" }}>
+                  Log 2 cycles to unlock predictions
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  Tap to open the Period Tracker →
+                </p>
+              </div>
+            </motion.div>
+          ) : (() => {
+            const statusMap = {
+              Normal:           { label: "Regular",   bg: "#dcfce7", color: "#15803d" },
+              Monitor:          { label: "Monitor",   bg: "#fef3c7", color: "#b45309" },
+              "Consult Doctor": { label: "Irregular", bg: "#ffe4e6", color: "#be123c" },
+              Irregular:        { label: "Irregular", bg: "#ffe4e6", color: "#be123c" },
+            };
+            const status = statusMap[cycleAnalytics.health_flag_level] ||
+              (cycleAnalytics.irregular
+                ? { label: "Irregular", bg: "#ffe4e6", color: "#be123c" }
+                : { label: "Regular",   bg: "#dcfce7", color: "#15803d" });
+            return (
+              <motion.div
+                whileHover={{ scale: 1.01, y: -2 }}
+                className="p-5 rounded-2xl shadow-sm cursor-pointer"
+                style={{ background: "var(--card-bg)", border: "1px solid var(--border-color)" }}
+                onClick={() => navigate("/period")}
+              >
+                {/* Status badge row */}
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+                    Cycle Status
+                  </p>
+                  <span
+                    className="text-xs font-bold px-3 py-1 rounded-full"
+                    style={{ background: status.bg, color: status.color }}
+                  >
+                    {status.label}
+                  </span>
+                </div>
+
+                {/* Two data points side by side */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-start gap-2.5">
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
+                      style={{ background: "color-mix(in srgb, var(--primary) 12%, transparent)" }}
+                    >
+                      📅
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider leading-tight" style={{ color: "var(--text-muted)" }}>
+                        Next Period
+                      </p>
+                      <p className="text-sm font-extrabold mt-0.5 leading-snug" style={{ color: "var(--primary)" }}>
+                        {fmtDate(cycleAnalytics.predicted_next_period)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5">
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
+                      style={{ background: "color-mix(in srgb, #f59e0b 12%, transparent)" }}
+                    >
+                      🔬
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider leading-tight" style={{ color: "var(--text-muted)" }}>
+                        Ovulation
+                      </p>
+                      <p className="text-sm font-extrabold mt-0.5 leading-snug" style={{ color: "#b45309" }}>
+                        {fmtDate(cycleAnalytics.predicted_ovulation_date)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-[11px] mt-4 text-right" style={{ color: "var(--text-muted)" }}>
+                  Full insights in Period Tracker →
+                </p>
+              </motion.div>
+            );
+          })()}
         </motion.div>
 
         {/* ── Recommended ── */}
