@@ -285,6 +285,7 @@ export const logDaily = async (req, res) => {
   try {
     const {
       date,
+      on_period,
       flow_intensity,
       pain_level,
       mood,
@@ -299,20 +300,25 @@ export const logDaily = async (req, res) => {
     }
 
     const logDate = dayOnly(date);
+    const today   = dayOnly(new Date());
     const isBleedingEntry =
       flow_intensity && BLEEDING_INTENSITIES.includes(flow_intensity);
+
+    // Treat on_period:true as a bleeding entry even if no flow level was chosen
+    const wantsCycle = isBleedingEntry || on_period === true;
 
     // ── 1. Upsert DailyLog (always — one per user per day) ─────────────────
     const logUpdate = {
       user_id: req.user.userId,
       date:    logDate,
       ...(isBleedingEntry                                    && { flow_intensity }),
-      ...(mood         !== undefined                         && { mood }),
-      ...(symptoms     !== undefined                         && { symptoms }),
-      ...(energy_level !== undefined && energy_level !== null && { energy_level }),
-      ...(pain_level   !== undefined && pain_level   !== null && { pain_level }),
-      ...(stress_level !== undefined                         && { stress_level }),
-      ...(notes        !== undefined                         && { notes }),
+      ...(on_period        !== undefined && on_period !== null && { on_period }),
+      ...(mood             !== undefined                       && { mood }),
+      ...(symptoms         !== undefined                       && { symptoms }),
+      ...(energy_level     !== undefined && energy_level !== null && { energy_level }),
+      ...(pain_level       !== undefined && pain_level   !== null && { pain_level }),
+      ...(stress_level     !== undefined                       && { stress_level }),
+      ...(notes            !== undefined                       && { notes }),
     };
 
     const log = await DailyLog.findOneAndUpdate(
@@ -321,8 +327,18 @@ export const logDaily = async (req, res) => {
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
     );
 
-    // ── 2. Cycle management (only when flow is logged) ─────────────────────
-    if (isBleedingEntry) {
+    // ── 2. Cycle management ────────────────────────────────────────────────
+    if (wantsCycle) {
+      // Is there already an explicitly active cycle?
+      const activeFlag = await Cycle.findOne({ user_id: req.user.userId, is_active: true });
+      if (activeFlag) {
+        // Just update flow if provided; don't create a duplicate
+        if (isBleedingEntry) {
+          await Cycle.findByIdAndUpdate(activeFlag._id, { flow_intensity });
+        }
+        return res.status(200).json({ success: true, log });
+      }
+
       // a) Is this date already inside an existing cycle?
       const coveringCycle = await Cycle.findOne({
         user_id:      req.user.userId,
@@ -331,11 +347,12 @@ export const logDaily = async (req, res) => {
       });
 
       if (coveringCycle) {
-        // Extend period_end if needed and update flow_intensity
         const newEnd = logDate > new Date(coveringCycle.period_end) ? logDate : coveringCycle.period_end;
+        const setIsActive = +logDate === +today; // mark active only when logging today
         await Cycle.findByIdAndUpdate(coveringCycle._id, {
-          period_end:    newEnd,
-          flow_intensity,
+          period_end: newEnd,
+          ...(isBleedingEntry && { flow_intensity }),
+          ...(setIsActive     && { is_active: true }),
         });
         return res.status(200).json({ success: true, log });
       }
@@ -350,22 +367,26 @@ export const logDaily = async (req, res) => {
       });
 
       if (consecutiveCycle) {
+        const setIsActive = +logDate === +today;
         await Cycle.findByIdAndUpdate(consecutiveCycle._id, {
-          period_end:    logDate,
-          flow_intensity,
+          period_end: logDate,
+          ...(isBleedingEntry && { flow_intensity }),
+          ...(setIsActive     && { is_active: true }),
         });
         return res.status(200).json({ success: true, log });
       }
 
-      // c) Brand-new period starts today
+      // c) Brand-new period — mark as active only when the log date is today
+      const setIsActive = +logDate === +today;
       await Cycle.create({
         user_id:      req.user.userId,
         period_start: logDate,
         period_end:   logDate,
-        flow_intensity,
-        ...(symptoms?.length && { symptoms }),
-        ...(mood              && { mood }),
-        ...(notes             && { notes }),
+        is_active:    setIsActive,
+        ...(isBleedingEntry    && { flow_intensity }),
+        ...(symptoms?.length   && { symptoms }),
+        ...(mood               && { mood }),
+        ...(notes              && { notes }),
       });
     }
 
@@ -385,12 +406,40 @@ export const logDaily = async (req, res) => {
    the last day with recorded flow).
 -----------------------------------------
 */
+export const startPeriod = async (req, res) => {
+  try {
+    const today = dayOnly(new Date());
+
+    // Prevent duplicate active periods
+    const existing = await Cycle.findOne({ user_id: req.user.userId, is_active: true });
+    if (existing) {
+      return res.status(409).json({ message: "A period is already active. End it before starting a new one." });
+    }
+
+    const cycle = await Cycle.create({
+      user_id:        req.user.userId,
+      period_start:   today,
+      period_end:     today,
+      flow_intensity: req.body.flow_intensity || "Medium",
+      is_active:      true,
+    });
+
+    return res.status(201).json({ success: true, cycle });
+  } catch (err) {
+    console.error("[START PERIOD]", err.message);
+    res.status(500).json({ message: "Failed to start period" });
+  }
+};
+
 export const endPeriod = async (req, res) => {
   try {
     const today = dayOnly(new Date());
 
-    // Find the most recent cycle
-    const activeCycle = await Cycle.findOne({ user_id: req.user.userId }).sort({ period_start: -1 });
+    // Prefer an explicitly active cycle; fall back to most recent
+    let activeCycle = await Cycle.findOne({ user_id: req.user.userId, is_active: true });
+    if (!activeCycle) {
+      activeCycle = await Cycle.findOne({ user_id: req.user.userId }).sort({ period_start: -1 });
+    }
 
     if (!activeCycle) {
       return res.status(404).json({ message: "No active period found." });
@@ -398,19 +447,16 @@ export const endPeriod = async (req, res) => {
 
     // Try to find the actual last day with a flow log so we don't over-shoot
     const lastFlowLog = await DailyLog.findOne({
-      user_id:       req.user.userId,
+      user_id:        req.user.userId,
       flow_intensity: { $in: BLEEDING_INTENSITIES },
-      date:          {
-        $gte: activeCycle.period_start,
-        $lte: today,
-      },
+      date:           { $gte: activeCycle.period_start, $lte: today },
     }).sort({ date: -1 });
 
     const periodEnd = lastFlowLog ? dayOnly(lastFlowLog.date) : today;
 
     const updated = await Cycle.findByIdAndUpdate(
       activeCycle._id,
-      { period_end: periodEnd },
+      { period_end: periodEnd, is_active: false },
       { new: true }
     );
 

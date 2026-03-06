@@ -8,6 +8,7 @@ import {
   getCycleAnalytics,
   logDaily,
   getDayLog,
+  startPeriod,
   endPeriod,
 } from "../controllers/cycleController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
@@ -19,7 +20,8 @@ const router = express.Router();
 router.get("/analytics",   authMiddleware, getCycleAnalytics);
 router.get("/log",         authMiddleware, getDayLog);        // fetch single-day log
 router.post("/log",        authMiddleware, logDaily);         // unified daily upsert
-router.post("/end-period", authMiddleware, endPeriod);        // close active period
+router.post("/start-period", authMiddleware, startPeriod);    // open a new period
+router.post("/end-period",   authMiddleware, endPeriod);        // close active period
 router.post("/",           authMiddleware, createCycle);
 router.get("/",            authMiddleware, getUserCycles);
 router.get("/:id",         authMiddleware, getSingleCycle);

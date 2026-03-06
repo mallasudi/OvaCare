@@ -45,6 +45,10 @@ const dailyLogSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    on_period: {
+      type: Boolean,
+      default: null,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
