@@ -37,6 +37,10 @@ const cycleSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    is_active: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
