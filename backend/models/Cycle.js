@@ -13,7 +13,7 @@ const cycleSchema = new mongoose.Schema(
     },
     period_end: {
       type: Date,
-      required: true,
+      default: null, // null = cycle is still ongoing (not yet ended)
     },
     flow_intensity: {
       type: String,
