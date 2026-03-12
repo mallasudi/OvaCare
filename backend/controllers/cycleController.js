@@ -328,69 +328,42 @@ export const logDaily = async (req, res) => {
     );
 
     // ── 2. Cycle management ────────────────────────────────────────────────
+    // An active cycle is defined strictly as one where period_end is null.
+    // The coveringCycle / consecutiveCycle heuristics that previously
+    // intercepted logging of past dates adjacent to closed cycles are
+    // intentionally removed: they prevented cycle creation by returning
+    // early without ever opening a new period, causing the UI to show
+    // "No active period" even after a bleeding-day entry was saved.
+    let cycle_started = false;
+
     if (wantsCycle) {
-      // Is there already an explicitly active cycle?
-      const activeFlag = await Cycle.findOne({ user_id: req.user.userId, is_active: true });
-      if (activeFlag) {
-        // Just update flow if provided; don't create a duplicate
-        if (isBleedingEntry) {
-          await Cycle.findByIdAndUpdate(activeFlag._id, { flow_intensity });
-        }
-        return res.status(200).json({ success: true, log });
-      }
-
-      // a) Is this date already inside an existing cycle?
-      const coveringCycle = await Cycle.findOne({
-        user_id:      req.user.userId,
-        period_start: { $lte: logDate },
-        period_end:   { $gte: logDate },
-      });
-
-      if (coveringCycle) {
-        const newEnd = logDate > new Date(coveringCycle.period_end) ? logDate : coveringCycle.period_end;
-        const setIsActive = +logDate === +today; // mark active only when logging today
-        await Cycle.findByIdAndUpdate(coveringCycle._id, {
-          period_end: newEnd,
-          ...(isBleedingEntry && { flow_intensity }),
-          ...(setIsActive     && { is_active: true }),
-        });
-        return res.status(200).json({ success: true, log });
-      }
-
-      // b) Is this the day immediately after an existing cycle's end?
-      const previousDay = new Date(logDate);
-      previousDay.setUTCDate(previousDay.getUTCDate() - 1);
-
-      const consecutiveCycle = await Cycle.findOne({
+      const activeCycle = await Cycle.findOne({
         user_id:    req.user.userId,
-        period_end: previousDay,
+        period_end: null,
       });
 
-      if (consecutiveCycle) {
-        const setIsActive = +logDate === +today;
-        await Cycle.findByIdAndUpdate(consecutiveCycle._id, {
-          period_end: logDate,
-          ...(isBleedingEntry && { flow_intensity }),
-          ...(setIsActive     && { is_active: true }),
+      if (activeCycle) {
+        // Open period already exists — update flow metadata only, no duplicate
+        if (isBleedingEntry) {
+          await Cycle.findByIdAndUpdate(activeCycle._id, { flow_intensity });
+        }
+      } else {
+        // No open cycle — start a fresh one from the logged date
+        await Cycle.create({
+          user_id:      req.user.userId,
+          period_start: logDate,
+          period_end:   null,
+          is_active:    true,
+          ...(isBleedingEntry    && { flow_intensity }),
+          ...(symptoms?.length   && { symptoms }),
+          ...(mood               && { mood }),
+          ...(notes              && { notes }),
         });
-        return res.status(200).json({ success: true, log });
+        cycle_started = true;
       }
-
-      // c) Brand-new period — mark as active only when the log date is today
-      const setIsActive = +logDate === +today;
-      await Cycle.create({
-        user_id:      req.user.userId,
-        period_start: logDate,
-        period_end:   logDate,
-        is_active:    setIsActive,
-        ...(isBleedingEntry    && { flow_intensity }),
-        ...(symptoms?.length   && { symptoms }),
-        ...(mood               && { mood }),
-        ...(notes              && { notes }),
-      });
     }
 
-    return res.status(200).json({ success: true, log });
+    return res.status(200).json({ success: true, cycle_started, log });
   } catch (err) {
     console.error("[LOG DAILY]", err.message);
     res.status(500).json({ message: "Failed to save daily log" });
@@ -410,8 +383,14 @@ export const startPeriod = async (req, res) => {
   try {
     const today = dayOnly(new Date());
 
-    // Prevent duplicate active periods
-    const existing = await Cycle.findOne({ user_id: req.user.userId, is_active: true });
+    // An active period is defined solely by period_end: null.
+    // Do NOT check is_active here — stale is_active:true records from old
+    // code paths that already have a real period_end would otherwise block
+    // new period creation permanently.
+    const existing = await Cycle.findOne({
+      user_id:    req.user.userId,
+      period_end: null,
+    });
     if (existing) {
       return res.status(409).json({ message: "A period is already active. End it before starting a new one." });
     }
@@ -419,7 +398,7 @@ export const startPeriod = async (req, res) => {
     const cycle = await Cycle.create({
       user_id:        req.user.userId,
       period_start:   today,
-      period_end:     today,
+      period_end:     null,
       flow_intensity: req.body.flow_intensity || "Medium",
       is_active:      true,
     });
@@ -435,28 +414,44 @@ export const endPeriod = async (req, res) => {
   try {
     const today = dayOnly(new Date());
 
-    // Prefer an explicitly active cycle; fall back to most recent
-    let activeCycle = await Cycle.findOne({ user_id: req.user.userId, is_active: true });
-    if (!activeCycle) {
-      activeCycle = await Cycle.findOne({ user_id: req.user.userId }).sort({ period_start: -1 });
-    }
+    // Only look for a genuinely open cycle (period_end: null).
+    // Ignoring the is_active flag avoids closing stale legacy cycles that
+    // already have a real period_end but were left with is_active: true.
+    const activeCycle = await Cycle.findOne({
+      user_id:    req.user.userId,
+      period_end: null,
+    }).sort({ period_start: -1 });
 
     if (!activeCycle) {
       return res.status(404).json({ message: "No active period found." });
     }
 
-    // Try to find the actual last day with a flow log so we don't over-shoot
-    const lastFlowLog = await DailyLog.findOne({
-      user_id:        req.user.userId,
-      flow_intensity: { $in: BLEEDING_INTENSITIES },
-      date:           { $gte: activeCycle.period_start, $lte: today },
-    }).sort({ date: -1 });
+    // If the user provides an explicit end_date (manual correction), use it
+    // as long as it falls on or after period_start and is not in the future.
+    let periodEnd;
+    if (req.body.end_date) {
+      const supplied = dayOnly(req.body.end_date);
+      if (supplied < dayOnly(activeCycle.period_start)) {
+        return res.status(400).json({ message: "End date cannot be before the period start date." });
+      }
+      if (supplied > today) {
+        return res.status(400).json({ message: "End date cannot be in the future." });
+      }
+      periodEnd = supplied;
+    } else {
+      // Auto-detect: use the last logged flow day so we don't over-shoot.
+      const lastFlowLog = await DailyLog.findOne({
+        user_id:        req.user.userId,
+        flow_intensity: { $in: BLEEDING_INTENSITIES },
+        date:           { $gte: activeCycle.period_start, $lte: today },
+      }).sort({ date: -1 });
+      periodEnd = lastFlowLog ? dayOnly(lastFlowLog.date) : today;
+    }
 
-    const periodEnd = lastFlowLog ? dayOnly(lastFlowLog.date) : today;
-
+    // Use explicit $set so Mongoose 8 cannot treat it as a document replacement.
     const updated = await Cycle.findByIdAndUpdate(
       activeCycle._id,
-      { period_end: periodEnd, is_active: false },
+      { $set: { period_end: periodEnd, is_active: false } },
       { new: true }
     );
 
