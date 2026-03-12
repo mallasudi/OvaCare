@@ -184,6 +184,102 @@ function BottomNav() {
   );
 }
 
+// ─── End Period Controls ──────────────────────────────────────────────────────
+// Renders the "End Period" quick button + an expandable date-picker for manual
+// backdated end-date entry (e.g. the user forgot to end her period on time).
+function EndPeriodControls({ activeCycle, endingPeriod, onEnd, todayStr }) {
+  const [picking, setPicking] = useState(false);
+  const [endDate, setEndDate] = useState(todayStr);
+
+  // Max selectable date is today; min is the period's own start date
+  const minDate = isoDate(new Date(activeCycle.period_start));
+
+  const handleConfirm = () => {
+    onEnd(endDate);
+    setPicking(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Quick end — uses today / last logged flow day (server decides) */}
+      <button
+        onClick={() => { setPicking(false); onEnd(null); }}
+        disabled={endingPeriod}
+        className="w-full py-3 rounded-xl font-bold transition-all"
+        style={{
+          fontSize: 14, color: "white",
+          background: "linear-gradient(135deg, var(--primary), var(--accent))",
+          boxShadow: "0 4px 16px rgba(197,124,138,0.4)",
+          border: "none", cursor: endingPeriod ? "not-allowed" : "pointer",
+          opacity: endingPeriod ? 0.7 : 1,
+        }}>
+        {endingPeriod ? "Ending..." : "End Period"}
+      </button>
+
+      {/* Backdated end — expand date picker */}
+      {!picking ? (
+        <button
+          onClick={() => setPicking(true)}
+          className="w-full py-2 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all"
+          style={{
+            fontSize: 12, color: "var(--text-muted)",
+            background: "transparent",
+            border: "1px dashed var(--border-color)",
+            cursor: "pointer",
+          }}>
+          <span>📅</span> Set a different end date
+        </button>
+      ) : (
+        <div
+          className="rounded-xl flex flex-col gap-3"
+          style={{ padding: "14px", background: "var(--bg-main)", border: "1px solid var(--border-color)" }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-main)", margin: 0 }}>
+            When did your period end?
+          </p>
+          <input
+            type="date"
+            value={endDate}
+            min={minDate}
+            max={todayStr}
+            onChange={(e) => e.target.value && setEndDate(e.target.value)}
+            style={{
+              width: "100%", padding: "9px 12px", borderRadius: 10,
+              border: "1px solid var(--border-color)", background: "var(--card-bg)",
+              color: "var(--text-main)", fontSize: 13, outline: "none",
+              cursor: "pointer", boxSizing: "border-box",
+            }}
+            onFocus={(e)  => (e.target.style.borderColor = "var(--primary)")}
+            onBlur={(e)   => (e.target.style.borderColor = "var(--border-color)")}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPicking(false)}
+              style={{
+                flex: 1, padding: "8px", borderRadius: 10, fontSize: 13, fontWeight: 600,
+                background: "transparent", border: "1px solid var(--border-color)",
+                color: "var(--text-muted)", cursor: "pointer",
+              }}>
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirm}
+              disabled={endingPeriod}
+              style={{
+                flex: 2, padding: "8px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+                background: "linear-gradient(135deg, var(--primary), var(--accent))",
+                color: "white", border: "none",
+                cursor: endingPeriod ? "not-allowed" : "pointer",
+                opacity: endingPeriod ? 0.7 : 1,
+              }}>
+              {endingPeriod ? "Saving..." : "Confirm End Date"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Log Modal ────────────────────────────────────────────────────────────────
 function LogModal({ date, activeCycle, startPeriod = false, onClose, onSaved, showToast }) {
   const [selectedDate, setSelectedDate] = useState(date);
@@ -203,24 +299,27 @@ function LogModal({ date, activeCycle, startPeriod = false, onClose, onSaved, sh
   useEffect(() => {
     let cancelled = false;
     setLoadingLog(true);
-    setHasPeriod(startPeriod || !!activeCycle);
+    // Reset per-day fields only — do NOT reset hasPeriod here so that the
+    // user's explicit toggle choice (or the startPeriod default) is preserved
+    // when they change the date in the modal.
     setFlow(""); setPain(0); setSelSymptoms([]); setMood(""); setEnergy(3); setStress("Low"); setNotes("");
     API.get("/cycles/log", { params: { date: selectedDate } })
       .then(({ data }) => {
         if (cancelled) return;
         const log = data?.log;
         if (log) {
+          // A saved log exists for this date — restore all its fields.
           if (log.flow_intensity) { setHasPeriod(true); setFlow(log.flow_intensity); }
+          else { setHasPeriod(startPeriod || !!activeCycle); }
           setSelSymptoms(log.symptoms || []);
           setMood(log.mood            || "");
           setEnergy(log.energy_level  ?? 3);
           setPain(log.pain_level      ?? 0);
           setStress(log.stress_level  || "Low");
           setNotes(log.notes          || "");
-        } else {
-          setHasPeriod(startPeriod || !!activeCycle);
-          setFlow(activeCycle?.flow_intensity || "");
         }
+        // No log for this date: leave hasPeriod as-is (user's current choice),
+        // only the per-day fields were reset above.
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoadingLog(false); });
@@ -241,16 +340,22 @@ function LogModal({ date, activeCycle, startPeriod = false, onClose, onSaved, sh
         // creates a cycle even if the user forgets to pick a flow level.
         ...(hasPeriod ? { flow_intensity: flow || "Medium" } : {}),
         symptoms:     selSymptoms,
-        ...(mood ? { mood } : {}),
+        mood,
         pain_level:   pain,
         energy_level: energy,
         stress_level: stress,
-        ...(notes ? { notes } : {}),
+        notes,
       };
-      await API.post("/cycles/log", payload);
+      const { data: logData } = await API.post("/cycles/log", payload);
       if (markLastDay && activeCycle) await API.post("/cycles/end-period");
       onSaved();
-      showToast?.(markLastDay && activeCycle ? "Saved and period marked as ended." : "Entry saved successfully.");
+      showToast?.(
+        markLastDay && activeCycle
+          ? "Saved and period marked as ended."
+          : logData?.cycle_started
+          ? "Entry saved. Period cycle started."
+          : "Entry saved successfully."
+      );
       onClose();
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to save. Please try again.");
@@ -674,7 +779,8 @@ export default function PeriodTracker() {
     // Use the calendar's visible month so navigating months fetches the right logs.
     const y = calMonth.year;
     const m = calMonth.month + 1;
-    Promise.all([
+    // Return the Promise so callers that `await fetchAll()` wait for data to arrive.
+    return Promise.all([
       API.get("/cycles/analytics"),
       API.get("/cycles"),
       API.get("/daily-logs?year=" + y + "&month=" + m),
@@ -685,7 +791,7 @@ export default function PeriodTracker() {
         setCycles(Array.isArray(raw.cycles) ? raw.cycles : Array.isArray(raw) ? raw : []);
         setDailyLogs(lRes.data?.logs || []);
       })
-      .catch(() => {})
+      .catch((err) => { console.error("[fetchAll]", err?.response?.data || err.message); })
       .finally(() => setLoading(false));
   // calMonth is intentionally included so the calendar refreshes when navigating months
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -716,17 +822,42 @@ export default function PeriodTracker() {
       .map((l) => isoDate(new Date(l.date)))
   );
 
-  // Prefer an explicitly active cycle (is_active flag); fall back to date-range for
-  // legacy records that pre-date the is_active field.
-  const activeCycle =
-    cycles.find((c) => c.is_active === true) ||
-    cycles.find((c) => {
-      const cs = isoDate(new Date(c.period_start));
-      if (!c.period_end) return cs <= todayStr;
-      const ce = isoDate(new Date(c.period_end));
-      return cs <= todayStr && todayStr <= ce;
-    });
+  // Active cycle = period_end is null (open / ongoing).
+  // The is_active flag is no longer used for detection — stale legacy cycles
+  // that have is_active:true but a real period_end would otherwise freeze the
+  // UI in a permanent "Period active" state.
+  const activeCycle = cycles.find((c) => c.period_end == null);
   const isPeriodActive = !!activeCycle;
+
+  // Build a per-date lookup: { periodDay, log } so every calendar cell knows
+  // exactly where it sits in the bleeding sequence and what was logged.
+  const dayInfoMap = (() => {
+    const map = {};
+    cycles.forEach((c) => {
+      const start = new Date(c.period_start);
+      const end   = c.period_end ? new Date(c.period_end) : new Date(todayStr);
+      let dayN = 1;
+      const cur = new Date(start);
+      cur.setUTCHours(0, 0, 0, 0);
+      const endD = new Date(end);
+      endD.setUTCHours(0, 0, 0, 0);
+      while (cur <= endD) {
+        const ds = isoDate(cur);
+        if (!map[ds]) map[ds] = {};
+        // Keep the earliest periodDay if two cycles overlap (shouldn't happen, but safe)
+        if (!map[ds].periodDay) map[ds].periodDay = dayN;
+        map[ds].isPeriod = true;
+        cur.setDate(cur.getDate() + 1);
+        dayN++;
+      }
+    });
+    dailyLogs.forEach((l) => {
+      const ds = isoDate(new Date(l.date));
+      if (!map[ds]) map[ds] = {};
+      map[ds].log = l;
+    });
+    return map;
+  })();
 
   const lastCycle = cycles[0];
   const currentCycleDay = lastCycle
@@ -770,76 +901,184 @@ export default function PeriodTracker() {
     } finally { setLoggingPeriod(false); }
   };
 
-  const handleEndPeriod = async () => {
+  const handleEndPeriod = async (endDate = null) => {
     setEndingPeriod(true);
     try {
-      await API.post("/cycles/end-period");
+      await API.post("/cycles/end-period", endDate ? { end_date: endDate } : {});
       await fetchAll();
-      showToast("Period ended. Your cycle has been updated.");
-    } catch {
-      showToast("Could not end period. Please try again.");
+      showToast(endDate ? `Period ended on ${fmt(endDate, { month: "short", day: "numeric" })}.` : "Period ended. Your cycle has been updated.");
+    } catch (err) {
+      showToast(err?.response?.data?.message || "Could not end period. Please try again.");
     } finally { setEndingPeriod(false); }
   };
 
   const openLogEntryModal = () => {
-    setModal({ date: calSelected || todayStr });
+    // startPeriod: true opens the modal with the period toggle already ON.
+    // This is the primary intent of "Log Entry (Missed a day?)".
+    setModal({ date: calSelected || todayStr, startPeriod: true });
   };
 
   function renderCalendar() {
     const { year, month } = calMonth;
-    const firstDay = new Date(year, month, 1).getDay();
+    const firstDay   = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const cells = [];
     for (let i = 0; i < firstDay; i++) cells.push(<div key={"pad-" + i} />);
+
     for (let d = 1; d <= daysInMonth; d++) {
-      const ds = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      const ds          = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      const info        = dayInfoMap[ds] || {};
       const isPeriod    = periodDates.has(ds);
-      const isFertile   = fertileDates.has(ds);
-      const isOvulation = ds === ovulationStr;
-      const isPMS       = pmsDates.has(ds);
-      const isToday     = ds === todayStr;
-      const hasLog      = logDates.has(ds);
-      // Show a softer pink for manually-logged period days not yet backed by a Cycle record
       const isLogBleed  = !isPeriod && logBleedDates.has(ds);
+      const isFertile   = fertileDates.has(ds) && !isPeriod && !isLogBleed;
+      const isOvulation = ds === ovulationStr;
+      const isPMS       = pmsDates.has(ds) && !isPeriod && !isLogBleed && !isFertile;
+      const isToday     = ds === todayStr;
+      const isSelected  = ds === calSelected;
+      const log         = info.log;
+      const periodDay   = info.periodDay;
+      const isFuture    = ds > todayStr;
 
-      let bg = "transparent", tc = "var(--text-main)", bStyle = "1px solid transparent", bShadow = "none", fw = 500, tip = null;
-      if (isPeriod)         { bg = "#e11d48"; tc = "white"; fw = 700; tip = "Logged period day"; }
-      else if (isLogBleed)  { bg = "#fb7185"; tc = "white"; fw = 700; tip = "Manual period entry"; }
-      else if (isOvulation) { bg = "#faf5ff"; tc = "#7c3aed"; bStyle = "2px solid #a855f7"; bShadow = "0 0 0 3px rgba(168,85,247,0.15)"; fw = 700; tip = "Ovulation predicted"; }
-      else if (isFertile)   { bg = "#d1fae5"; tc = "#065f46"; tip = "Fertile window"; }
-      else if (isPMS)       { bg = "#fef9c3"; tc = "#713f12"; bStyle = "1px dashed #d97706"; tip = "PMS phase"; }
-      if (isToday) { bStyle = (isPeriod || isLogBleed) ? "2px solid #fff" : "2px solid var(--primary)"; if (!isPeriod && !isLogBleed && !isOvulation) tc = "var(--primary)"; fw = 700; }
+      // ── Background ───────────────────────────────────────────────────────
+      let bg, tc, fw = 500;
+      if (isPeriod)        { bg = "#e11d48";                        tc = "white";     fw = 700; }
+      else if (isLogBleed) { bg = "#fb7185";                        tc = "white";     fw = 700; }
+      else if (isOvulation){ bg = "rgba(124,58,237,0.13)";          tc = "#7c3aed";   fw = 700; }
+      else if (isFertile)  { bg = "rgba(5,150,105,0.11)";           tc = "#065f46";             }
+      else if (isPMS)      { bg = "rgba(217,119,6,0.10)";           tc = "#92400e";             }
+      else                 { bg = "transparent";                    tc = isFuture ? "var(--text-muted)" : "var(--text-main)"; }
 
-      const hovered = calTooltip?.ds === ds;
+      // ── Border ───────────────────────────────────────────────────────────
+      let border;
+      if (isSelected)      border = `2.5px solid ${isPeriod || isLogBleed ? "rgba(255,255,255,0.85)" : "var(--primary)"}`;
+      else if (isToday)    border = `2px solid ${isPeriod || isLogBleed ? "rgba(255,255,255,0.6)" : "var(--primary)"}`;
+      else if (isOvulation)border = "2px solid #a855f7";
+      else                 border = "1.5px solid transparent";
+
+      // ── Sub-label shown inside the cell ──────────────────────────────────
+      let subLabel = null, subColor = "inherit";
+      if ((isPeriod || isLogBleed) && periodDay) {
+        subLabel = `Day ${periodDay}`;
+        subColor = isPeriod ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.9)";
+      } else if (isOvulation) {
+        subLabel = "OV ✨";
+        subColor = "#7c3aed";
+      } else if (isFertile) {
+        subLabel = "fertile";
+        subColor = "#059669";
+      } else if (isPMS) {
+        subLabel = "PMS 🌙";
+        subColor = "#b45309";
+      }
+
+      // ── Tooltip content ───────────────────────────────────────────────────
+      let tipTitle = null, tipLines = [];
+      if (isPeriod || isLogBleed) {
+        tipTitle = periodDay ? `Period · Day ${periodDay}` : "Period day";
+        if (log?.flow_intensity) tipLines.push(`Flow: ${log.flow_intensity}`);
+        if (log?.pain_level > 0) tipLines.push(`Pain: ${log.pain_level}/10`);
+        if (log?.mood)           tipLines.push(`Mood: ${log.mood}`);
+        if (!log)                tipLines.push("Tap to log details");
+      } else if (isOvulation) {
+        tipTitle = "Predicted ovulation";
+        tipLines = ["Estrogen peaks · Highest fertility"];
+      } else if (isFertile) {
+        tipTitle = "Fertile window";
+        tipLines = ["Higher chance of conception"];
+      } else if (isPMS) {
+        tipTitle = "PMS phase";
+        tipLines = ["7 days before next period"];
+      } else if (log) {
+        tipTitle = "Log entry";
+        if (log.flow_intensity)  tipLines.push(`Flow: ${log.flow_intensity}`);
+        if (log.mood)            tipLines.push(`Mood: ${log.mood}`);
+        if (log.symptoms?.length) tipLines.push(log.symptoms.slice(0, 2).join(", "));
+        if (!tipLines.length)    tipLines.push("Tap to view entry");
+      }
+
+      const tipColor = isPeriod || isLogBleed ? "#e11d48" : isOvulation ? "#7c3aed" : isFertile ? "#059669" : isPMS ? "#b45309" : "var(--primary)";
+      const hovered  = calTooltip?.ds === ds;
+
       cells.push(
         <div key={ds} style={{ position: "relative" }}
-          onMouseEnter={() => setCalTooltip(tip ? { ds, label: tip } : { ds, label: null })}
+          onMouseEnter={() => setCalTooltip({ ds })}
           onMouseLeave={() => setCalTooltip(null)}>
-          <button onClick={() => setCalSelected(ds)}
-            style={{ width: "100%", background: bg, color: tc, border: bStyle, borderRadius: 10,
-              boxShadow: hovered ? (isOvulation ? "0 0 0 4px rgba(168,85,247,0.25),0 0 16px rgba(168,85,247,0.3)" : "0 2px 10px rgba(0,0,0,0.14)") : bShadow,
-              minHeight: 40, padding: "4px 2px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+
+          <button
+            onClick={() => setCalSelected(ds === calSelected ? null : ds)}
+            style={{
+              width: "100%", minHeight: 54,
+              background: bg, color: tc, border, borderRadius: 10,
+              padding: "4px 2px",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1,
               cursor: "pointer", position: "relative", fontWeight: fw,
-              transform: hovered ? "scale(1.10)" : "scale(1)", transition: "transform 0.12s ease, box-shadow 0.12s ease", zIndex: hovered ? 2 : 1 }}>
-            {isToday && <span style={{ position: "absolute", top: 1, right: 1, fontSize: 6, opacity: 0.8 }}>*</span>}
-            <span style={{ fontSize: 12, fontWeight: fw, lineHeight: 1 }}>{d}</span>
-            {isOvulation && <span style={{ fontSize: 7, fontWeight: 700, color: "#7c3aed", lineHeight: 1, marginTop: 2 }}>OV</span>}
-            {hasLog && !isPeriod && !isLogBleed && (
-              <span style={{ position: "absolute", bottom: 2, right: 2, width: 4, height: 4, borderRadius: "50%", background: isOvulation ? "#a855f7" : "var(--primary)", opacity: 0.7 }} />
+              boxShadow: isSelected
+                ? `0 0 0 3px color-mix(in srgb, var(--primary) 35%, transparent)`
+                : hovered ? "0 2px 12px rgba(0,0,0,0.18)" : "none",
+              transform: hovered ? "scale(1.07)" : "scale(1)",
+              transition: "transform 0.12s ease, box-shadow 0.12s ease",
+              zIndex: hovered ? 2 : 1,
+              opacity: isFuture && !isOvulation && !isFertile && !isPMS ? 0.45 : 1,
+            }}>
+
+            {/* Today indicator — small filled circle top-right */}
+            {isToday && (
+              <span style={{
+                position: "absolute", top: 3, right: 4,
+                width: 5, height: 5, borderRadius: "50%",
+                background: isPeriod || isLogBleed ? "rgba(255,255,255,0.9)" : "var(--primary)",
+                boxShadow: isPeriod || isLogBleed ? "none" : "0 0 4px var(--primary)",
+              }} />
+            )}
+
+            {/* Date number */}
+            <span style={{ fontSize: 13, fontWeight: fw, lineHeight: 1.1 }}>{d}</span>
+
+            {/* Sub-label */}
+            {subLabel && (
+              <span style={{
+                fontSize: 8, fontWeight: 700, color: subColor, lineHeight: 1,
+                letterSpacing: "-0.1px", whiteSpace: "nowrap",
+                overflow: "hidden", maxWidth: "95%", textOverflow: "ellipsis",
+              }}>{subLabel}</span>
+            )}
+
+            {/* Log indicator dot (period cells: white dot bottom-right; other cells: colored dot bottom-center) */}
+            {log && (isPeriod || isLogBleed) && (
+              <span style={{
+                position: "absolute", bottom: 3, right: 4,
+                width: 4, height: 4, borderRadius: "50%",
+                background: "rgba(255,255,255,0.75)",
+              }} />
+            )}
+            {log && !isPeriod && !isLogBleed && (
+              <span style={{
+                position: "absolute", bottom: 3, left: "50%", transform: "translateX(-50%)",
+                width: 4, height: 4, borderRadius: "50%",
+                background: isOvulation ? "#a855f7" : "var(--primary)", opacity: 0.85,
+              }} />
             )}
           </button>
-          {hovered && tip && (
-            <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.1 }}
-              style={{ position: "absolute", bottom: "calc(100% + 7px)", left: "50%", transform: "translateX(-50%)", zIndex: 200,
-                background: "var(--card-bg)", border: "1px solid var(--border-color)", borderRadius: 10, padding: "6px 10px",
-                pointerEvents: "none", boxShadow: "0 6px 24px rgba(0,0,0,0.14)", minWidth: 120 }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-main)", margin: 0, whiteSpace: "nowrap" }}>
+
+          {/* Rich tooltip */}
+          {hovered && tipTitle && (
+            <motion.div
+              initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.12 }}
+              style={{
+                position: "absolute", bottom: "calc(100% + 9px)", left: "50%",
+                transform: "translateX(-50%)", zIndex: 300,
+                background: "var(--card-bg)", border: `1px solid ${tipColor}44`,
+                borderRadius: 12, padding: "9px 13px",
+                pointerEvents: "none", boxShadow: "0 8px 28px rgba(0,0,0,0.18)",
+                minWidth: 148, maxWidth: 200,
+              }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-main)", margin: 0 }}>
                 {fmt(ds, { weekday: "short", month: "short", day: "numeric" })}
               </p>
-              <p style={{ fontSize: 10, margin: "2px 0 0", fontWeight: 600, whiteSpace: "nowrap",
-                color: isPeriod ? "#e11d48" : isLogBleed ? "#be123c" : isOvulation ? "#7c3aed" : isFertile ? "#059669" : isPMS ? "#b45309" : "var(--text-muted)" }}>
-                {tip}
-              </p>
+              <p style={{ fontSize: 11, fontWeight: 700, color: tipColor, margin: "3px 0 0" }}>{tipTitle}</p>
+              {tipLines.map((l, i) => (
+                <p key={i} style={{ fontSize: 10, margin: "2px 0 0", color: "var(--text-muted)", lineHeight: 1.5 }}>{l}</p>
+              ))}
             </motion.div>
           )}
         </div>
@@ -1078,11 +1317,12 @@ export default function PeriodTracker() {
                     </AnimatePresence>
 
                     {activeCycle ? (
-                      <button onClick={handleEndPeriod} disabled={endingPeriod}
-                        className="w-full py-3 rounded-xl font-bold transition-all"
-                        style={{ fontSize: 14, color: "white", background: "linear-gradient(135deg, var(--primary), var(--accent))", boxShadow: "0 4px 16px rgba(197,124,138,0.4)", border: "none", cursor: endingPeriod ? "not-allowed" : "pointer", opacity: endingPeriod ? 0.7 : 1 }}>
-                        {endingPeriod ? "Ending..." : "End Period"}
-                      </button>
+                      <EndPeriodControls
+                        activeCycle={activeCycle}
+                        endingPeriod={endingPeriod}
+                        onEnd={handleEndPeriod}
+                        todayStr={todayStr}
+                      />
                     ) : (
                       <button onClick={handleLogPeriod} disabled={loggingPeriod}
                         className="w-full py-3 rounded-xl font-bold transition-all"
@@ -1128,16 +1368,18 @@ export default function PeriodTracker() {
                       {renderCalendar()}
                     </div>
                     {/* Legend */}
-                    <div className="flex items-center gap-4 mt-4 flex-wrap">
+                    <div className="flex items-center gap-x-3 gap-y-1.5 mt-4 flex-wrap">
                       {[
-                        { color: "#e11d48", bg: "#fff1f2", label: "Bleeding" },
-                        { color: "#fb7185", bg: "#fff1f2", label: "Log Entry" },
-                        { color: "#10b981", bg: "#f0fdf4", label: "Fertile" },
-                        { color: "var(--primary)", bg: "var(--bg-main)", label: "Today" },
-                      ].map(({ color, bg, label }) => (
-                        <div key={label} className="flex items-center gap-1.5">
-                          <div style={{ width: 10, height: 10, borderRadius: 3, background: bg, border: `1.5px solid ${color}` }} />
-                          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{label}</span>
+                        { fill: "#e11d48",                      border: "#e11d48", label: "Period"    },
+                        { fill: "#fb7185",                      border: "#fb7185", label: "Log entry" },
+                        { fill: "rgba(124,58,237,0.13)",        border: "#a855f7", label: "Ovulation" },
+                        { fill: "rgba(5,150,105,0.15)",         border: "#10b981", label: "Fertile"   },
+                        { fill: "rgba(217,119,6,0.15)",         border: "#d97706", label: "PMS"       },
+                        { fill: "transparent",                  border: "var(--primary)", label: "Today" },
+                      ].map(({ fill, border, label }) => (
+                        <div key={label} className="flex items-center gap-1">
+                          <div style={{ width: 10, height: 10, borderRadius: 3, background: fill, border: `1.5px solid ${border}`, flexShrink: 0 }} />
+                          <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{label}</span>
                         </div>
                       ))}
                     </div>
@@ -1147,7 +1389,7 @@ export default function PeriodTracker() {
                           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Selected:</span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)" }}>{fmt(calSelected, { weekday: "long", month: "long", day: "numeric" })}</span>
                         </div>
-                        <button onClick={() => setModal({ date: calSelected })}
+                        <button onClick={() => setModal({ date: calSelected, startPeriod: true })}
                           className="rounded-xl px-4 py-2 font-semibold"
                           style={{ fontSize: 12, background: "var(--primary)", color: "white", border: "none", cursor: "pointer" }}>
                           Log Entry
