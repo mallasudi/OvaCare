@@ -1,5 +1,6 @@
 import DailyLog from "../models/DailyLog.js";
 import Cycle     from "../models/Cycle.js";
+import mongoose  from "mongoose";
 
 // All five flow levels — including Spotting — trigger automatic cycle creation
 const FLOW_INTENSITIES = ["Spotting", "Light", "Medium", "Heavy", "Very Heavy"];
@@ -16,7 +17,7 @@ function toDay(d) {
    Creates or updates a daily log entry.
    When flow_intensity indicates a bleeding
    day (or on_period is true) and no active
-   cycle exists, a new Cycle is started
+   cycle exists, a new C ycle is started
    automatically with period_end = null
    (open-ended / ongoing).
 -----------------------------------------
@@ -131,5 +132,64 @@ export const getDailyLogs = async (req, res) => {
   } catch (err) {
     console.error("[GET DAILY LOGS]", err.message);
     res.status(500).json({ message: "Failed to retrieve daily logs" });
+  }
+};
+
+/*
+-----------------------------------------
+   SYMPTOM INSIGHTS  (GET /api/daily-logs/insights)
+   Aggregates Ova-Tag symptom frequency for
+   the current user over the last 30 days,
+   sorted by count descending.
+-----------------------------------------
+*/
+export const getSymptomInsights = async (req, res) => {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    since.setUTCHours(0, 0, 0, 0);
+
+    const userId = new mongoose.Types.ObjectId(req.user.userId);
+
+    const results = await DailyLog.aggregate([
+      {
+        $match: {
+          user_id:  userId,
+          date:     { $gte: since },
+          symptoms: { $exists: true, $not: { $size: 0 } },
+        },
+      },
+      { $unwind: "$symptoms" },
+      {
+        $group: {
+          _id:   "$symptoms",
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+      {
+        $project: {
+          _id:     0,
+          symptom: "$_id",
+          count:   1,
+        },
+      },
+    ]);
+
+    // Also return the total number of log days in the window so the frontend
+    // can show "X out of Y days" context if needed later.
+    const totalDays = await DailyLog.countDocuments({
+      user_id: userId,
+      date:    { $gte: since },
+    });
+
+    return res.status(200).json({
+      period_days: 30,
+      total_log_days: totalDays,
+      insights: results,
+    });
+  } catch (err) {
+    console.error("[GET SYMPTOM INSIGHTS]", err.message);
+    res.status(500).json({ message: "Failed to load symptom insights." });
   }
 };
