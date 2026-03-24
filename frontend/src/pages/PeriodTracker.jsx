@@ -2,6 +2,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import API from "../utils/api";
+import CycleDoctorReportModal from "../components/CycleDoctorReportModal";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const FLOW_OPTIONS = ["Spotting", "Light", "Medium", "Heavy", "Very Heavy"];
@@ -110,6 +111,22 @@ const CONF_STYLE  = {
   High:   { bg: "#dcfce7", text: "#166534" },
 };
 
+// ─── Insight theme map (id → visual identity) ────────────────────────────────
+const INSIGHT_THEME = {
+  missed_cycle:           { icon: "⚠️", accent: "#ef4444", bg: "#fff1f2", border: "#fecaca", catBg: "#fee2e2", catFg: "#991b1b", cat: "Cycle Pattern"        },
+  delayed_period:         { icon: "⏰",   accent: "#f97316", bg: "#fff7ed", border: "#fed7aa", catBg: "#ffedd5", catFg: "#7c2d12", cat: "Cycle Pattern"        },
+  irregular_cycle:        { icon: "😴",   accent: "#d97706", bg: "#fffbeb", border: "#fde68a", catBg: "#fef3c7", catFg: "#78350f", cat: "Sleep & Rhythm"        },
+  prolonged_bleeding:     { icon: "📅",   accent: "#e11d48", bg: "#fff1f2", border: "#fecaca", catBg: "#fee2e2", catFg: "#9f1239", cat: "Flow & Bleeding"       },
+  heavy_flow:             { icon: "💧",   accent: "#0ea5e9", bg: "#f0f9ff", border: "#bae6fd", catBg: "#e0f2fe", catFg: "#0c4a6e", cat: "Nutrition & Hydration" },
+  high_pain_days:         { icon: "🌿",   accent: "#059669", bg: "#f0fdf4", border: "#a7f3d0", catBg: "#dcfce7", catFg: "#064e3b", cat: "Movement & Relief"     },
+  early_menstrual_cramps: { icon: "🏃",   accent: "#10b981", bg: "#f0fdf4", border: "#a7f3d0", catBg: "#dcfce7", catFg: "#064e3b", cat: "Movement & Relief"     },
+  pms_pattern:            { icon: "🧘",   accent: "#8b5cf6", bg: "#faf5ff", border: "#ddd6fe", catBg: "#ede9fe", catFg: "#4c1d95", cat: "Mood & Wellbeing"      },
+  pms_mood_swings:        { icon: "💭",   accent: "#a78bfa", bg: "#faf5ff", border: "#ddd6fe", catBg: "#ede9fe", catFg: "#4c1d95", cat: "Mood & Wellbeing"      },
+  stress_spikes:          { icon: "🌬️",  accent: "#6366f1", bg: "#eef2ff", border: "#c7d2fe", catBg: "#e0e7ff", catFg: "#312e81", cat: "Stress & Wellbeing"    },
+  pcos_awareness:         { icon: "🔬",   accent: "#7c3aed", bg: "#faf5ff", border: "#c4b5fd", catBg: "#ede9fe", catFg: "#4c1d95", cat: "Hormonal Health"       },
+};
+const INSIGHT_THEME_DEFAULT = { icon: "💡", accent: "#6b7280", bg: "var(--bg-main)", border: "var(--border-color)", catBg: "var(--border-color)", catFg: "var(--text-muted)", cat: "Insight" };
+
 // ─── SVG circular progress ring ───────────────────────────────────────────────
 function ScoreRing({ score, status, size = 112 }) {
   const R = 46, CX = 56, CY = 56;
@@ -201,9 +218,9 @@ function EndPeriodControls({ activeCycle, endingPeriod, onEnd, todayStr }) {
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Quick end — uses today / last logged flow day (server decides) */}
+      {/* Quick end — ends the period today */}
       <button
-        onClick={() => { setPicking(false); onEnd(null); }}
+        onClick={() => { setPicking(false); onEnd(todayStr); }}
         disabled={endingPeriod}
         className="w-full py-3 rounded-xl font-bold transition-all"
         style={{
@@ -347,7 +364,7 @@ function LogModal({ date, activeCycle, startPeriod = false, onClose, onSaved, sh
         notes,
       };
       const { data: logData } = await API.post("/cycles/log", payload);
-      if (markLastDay && activeCycle) await API.post("/cycles/end-period");
+      if (markLastDay && activeCycle) await API.post("/cycles/end-period", { end_date: selectedDate });
       onSaved();
       showToast?.(
         markLastDay && activeCycle
@@ -752,6 +769,171 @@ function CycleTimeline({ cycleDay, avgCycleLength = 28, avgBleedDuration = 5, ph
   );
 }
 
+// ─── Fertility Intelligence Card ─────────────────────────────────────────────
+function FertilityIntelligenceCard({ analytics, todayStr }) {
+  if (!analytics?.predicted_ovulation_date) return null;
+  if (!analytics?.fertile_window_start || !analytics?.fertile_window_end) return null;
+
+  const ovDate    = new Date(analytics.predicted_ovulation_date);
+  const fertStart = new Date(analytics.fertile_window_start);
+  const fertEnd   = new Date(analytics.fertile_window_end);
+
+  // Conception probability estimates by days-from-ovulation (based on Wilcox et al.)
+  const PROB_DATA = [
+    { offset: -5, prob: 10, label: "Low",      barH: 24, gradA: "#86efac", gradB: "#22c55e" },
+    { offset: -4, prob: 16, label: "Low",      barH: 34, gradA: "#4ade80", gradB: "#16a34a" },
+    { offset: -3, prob: 14, label: "Moderate", barH: 30, gradA: "#34d399", gradB: "#059669" },
+    { offset: -2, prob: 27, label: "High",     barH: 52, gradA: "#10b981", gradB: "#047857" },
+    { offset: -1, prob: 31, label: "High",     barH: 62, gradA: "#059669", gradB: "#065f46" },
+    { offset:  0, prob: 33, label: "Peak",     barH: 70, gradA: "#a855f7", gradB: "#7c3aed" },
+    { offset:  1, prob: 12, label: "Low",      barH: 26, gradA: "#c4b5fd", gradB: "#8b5cf6" },
+  ];
+
+  const days = PROB_DATA.map((p) => {
+    const d = new Date(ovDate);
+    d.setDate(d.getDate() + p.offset);
+    const ds = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    return { ...p, date: d, dateStr: ds, isToday: ds === todayStr, isOv: p.offset === 0, bg: `linear-gradient(170deg,${p.gradA},${p.gradB})` };
+  });
+
+  const diffToday = Math.round((new Date(todayStr) - ovDate) / 86400000);
+  const todayData = PROB_DATA.find((p) => p.offset === diffToday);
+  const inWindow  = diffToday >= -5 && diffToday <= 1;
+
+  const windowChip = inWindow && todayData
+    ? todayData.label === "Peak" ? { bg: "#ede9fe", fg: "#6d28d9", border: "#c4b5fd" }
+    : todayData.label === "High" ? { bg: "#dcfce7", fg: "#15803d", border: "#a7f3d0" }
+    : { bg: "#f0fdf4", fg: "#166534", border: "#bbf7d0" }
+    : null;
+
+  const fmtD = (d) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.11 }}
+      className="rounded-2xl overflow-hidden mb-4"
+      style={{ background: "var(--card-bg)", border: "1px solid var(--border-color)", boxShadow: "0 2px 20px rgba(0,0,0,0.05)" }}>
+      <div style={{ height: 3, background: "linear-gradient(90deg,#22c55e,#059669 30%,#7c3aed 70%,#a855f7)" }} />
+      <div className="p-5 sm:p-6">
+
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between gap-3 mb-5 flex-wrap">
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>
+              Fertility Intelligence
+            </p>
+            <p style={{ fontSize: 17, fontWeight: 800, color: "var(--text-main)", margin: 0 }}>
+              {inWindow ? "You are currently in your fertility window" : "Your upcoming fertility window"}
+            </p>
+          </div>
+          {inWindow && todayData && windowChip && (
+            <span style={{ padding: "5px 14px", borderRadius: 999, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", background: windowChip.bg, color: windowChip.fg, border: `1.5px solid ${windowChip.border}` }}>
+              {todayData.label} Fertility · ~{todayData.prob}%
+            </span>
+          )}
+        </div>
+
+        {/* ── Key stats ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          <div className="rounded-2xl p-4 flex items-center gap-4"
+            style={{ background: "linear-gradient(135deg,#f0fdf4,#dcfce7)", border: "1px solid #a7f3d0" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 14, background: "#bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>🌿</div>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#065f46", margin: "0 0 4px" }}>High Fertility Window</p>
+              <p style={{ fontSize: 18, fontWeight: 900, color: "#047857", lineHeight: 1.1, margin: 0 }}>{fmtD(fertStart)} – {fmtD(fertEnd)}</p>
+              <p style={{ fontSize: 11, color: "#10b981", fontWeight: 500, margin: "3px 0 0" }}>Most fertile days of your cycle</p>
+            </div>
+          </div>
+          <div className="rounded-2xl p-4 flex items-center gap-4"
+            style={{ background: "linear-gradient(135deg,#faf5ff,#ede9fe)", border: "1px solid #c4b5fd" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 14, background: "#ede9fe", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>✨</div>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#4c1d95", margin: "0 0 4px" }}>Ovulation Day</p>
+              <p style={{ fontSize: 18, fontWeight: 900, color: "#6d28d9", lineHeight: 1.1, margin: 0 }}>{fmtD(ovDate)}</p>
+              <p style={{ fontSize: 11, color: "#8b5cf6", fontWeight: 500, margin: "3px 0 0" }}>Predicted egg release · LH surge</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Fertility Probability Bar Chart ── */}
+        <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>
+          Fertility Probability by Day
+        </p>
+
+        {/* Bars */}
+        <div className="flex gap-1" style={{ height: 76 }}>
+          {days.map((day, i) => (
+            <div key={day.dateStr} className="flex-1 flex flex-col items-center justify-end"
+              title={`${day.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}: ${day.label} fertility (~${day.prob}%)`}>
+              <motion.div
+                initial={{ height: 0 }}
+                animate={{ height: day.barH }}
+                transition={{ duration: 0.7, delay: i * 0.08, ease: "easeOut" }}
+                style={{
+                  width: "100%", borderRadius: "4px 4px 0 0", background: day.bg,
+                  boxShadow: day.isOv ? "0 -4px 14px rgba(124,58,237,0.40)" : day.isToday ? "0 -3px 8px rgba(5,150,105,0.30)" : "none",
+                  outline:      day.isToday ? "2px solid #059669" : day.isOv ? "2px solid #7c3aed" : "none",
+                  outlineOffset: "1px",
+                }}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Separator */}
+        <div style={{ height: 2, background: "var(--border-color)", borderRadius: 999 }} />
+
+        {/* Day labels */}
+        <div className="flex gap-1 mt-1.5 mb-1">
+          {days.map((day) => (
+            <div key={"lbl-" + day.dateStr} className="flex-1 flex flex-col items-center" style={{ gap: 1 }}>
+              <span style={{ fontSize: 8.5, color: day.isOv ? "#6d28d9" : day.isToday ? "#059669" : "var(--text-muted)", textAlign: "center", fontWeight: day.isOv || day.isToday ? 800 : 400, lineHeight: 1.3 }}>
+                {day.date.toLocaleDateString("en-US", { weekday: "short" })}<br />
+                {day.date.getDate()}
+              </span>
+              {(day.isOv || day.isToday) && (
+                <span style={{ fontSize: 8, fontWeight: 800, color: day.isOv ? "#7c3aed" : "#059669" }}>
+                  {day.isOv ? "OV ✨" : "NOW"}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Probability % row */}
+        <div className="flex gap-1 mb-4">
+          {days.map((day) => (
+            <div key={"pct-" + day.dateStr} className="flex-1 text-center">
+              <span style={{ fontSize: 9, fontWeight: 700, color: day.isOv ? "#7c3aed" : day.isToday ? "#059669" : "var(--text-muted)" }}>
+                ~{day.prob}%
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-4 flex-wrap mb-3">
+          {[
+            { color: "#22c55e", label: "Low fertility"    },
+            { color: "#059669", label: "High fertility"   },
+            { color: "#7c3aed", label: "Ovulation (peak)" },
+          ].map(({ color, label }) => (
+            <div key={label} className="flex items-center gap-1.5">
+              <div style={{ width: 9, height: 9, borderRadius: 2, background: color }} />
+              <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Footnote */}
+        <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-color)", paddingTop: 10, margin: 0 }}>
+          ✦ Probability estimates are based on population-level data (Wilcox et al. 1995). Ovulation is predicted 14 days before your next expected period. Log more cycles for improved personalised accuracy.
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── Main PeriodTracker ───────────────────────────────────────────────────────
 export default function PeriodTracker() {
   const todayStr = isoDate(new Date());
@@ -771,6 +953,7 @@ export default function PeriodTracker() {
   const [endingPeriod,  setEndingPeriod]  = useState(false);
   const [toast,        setToast]        = useState(null);
   const [expandedSug,  setExpandedSug]  = useState(null);
+  const [showReport,   setShowReport]   = useState(false);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 4000); };
 
@@ -901,12 +1084,13 @@ export default function PeriodTracker() {
     } finally { setLoggingPeriod(false); }
   };
 
-  const handleEndPeriod = async (endDate = null) => {
+  const handleEndPeriod = async (selectedDate) => {
     setEndingPeriod(true);
     try {
-      await API.post("/cycles/end-period", endDate ? { end_date: endDate } : {});
+      console.log("END DATE SENT:", selectedDate);
+      await API.post("/cycles/end-period", { end_date: selectedDate });
       await fetchAll();
-      showToast(endDate ? `Period ended on ${fmt(endDate, { month: "short", day: "numeric" })}.` : "Period ended. Your cycle has been updated.");
+      showToast(`Period ended on ${fmt(selectedDate, { month: "short", day: "numeric" })}.`);
     } catch (err) {
       showToast(err?.response?.data?.message || "Could not end period. Please try again.");
     } finally { setEndingPeriod(false); }
@@ -940,11 +1124,21 @@ export default function PeriodTracker() {
       const isFuture    = ds > todayStr;
 
       // ── Background ───────────────────────────────────────────────────────
+      // Compute fertility offset (days from ovulation) used for graded intensity
+      const fertOffset = (isFertile || isOvulation) && ovulationStr
+        ? Math.round((new Date(ds) - new Date(ovulationStr)) / 86400000)
+        : null;
       let bg, tc, fw = 500;
       if (isPeriod)        { bg = "#e11d48";                        tc = "white";     fw = 700; }
       else if (isLogBleed) { bg = "#fb7185";                        tc = "white";     fw = 700; }
-      else if (isOvulation){ bg = "rgba(124,58,237,0.13)";          tc = "#7c3aed";   fw = 700; }
-      else if (isFertile)  { bg = "rgba(5,150,105,0.11)";           tc = "#065f46";             }
+      else if (isOvulation){
+        bg = "rgba(124,58,237,0.22)";  tc = "#5b21b6";  fw = 800;
+      }
+      else if (isFertile)  {
+        const alphaMap = { "-5": "0.07", "-4": "0.10", "-3": "0.13", "-2": "0.19", "-1": "0.24", "1": "0.10" };
+        const alpha = fertOffset !== null ? (alphaMap[String(fertOffset)] ?? "0.11") : "0.11";
+        bg = `rgba(5,150,105,${alpha})`;  tc = fertOffset !== null && fertOffset >= -2 ? "#047857" : "#065f46";  fw = fertOffset !== null && fertOffset >= -2 ? 600 : 500;
+      }
       else if (isPMS)      { bg = "rgba(217,119,6,0.10)";           tc = "#92400e";             }
       else                 { bg = "transparent";                    tc = isFuture ? "var(--text-muted)" : "var(--text-main)"; }
 
@@ -961,11 +1155,12 @@ export default function PeriodTracker() {
         subLabel = `Day ${periodDay}`;
         subColor = isPeriod ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.9)";
       } else if (isOvulation) {
-        subLabel = "OV ✨";
-        subColor = "#7c3aed";
+        subLabel = "✨ Peak";
+        subColor = "#6d28d9";
       } else if (isFertile) {
-        subLabel = "fertile";
-        subColor = "#059669";
+        const fertLabelMap = { "-5": "low", "-4": "low", "-3": "mod", "-2": "▲ high", "-1": "▲ high", "1": "fertile" };
+        subLabel = fertOffset !== null ? (fertLabelMap[String(fertOffset)] ?? "fertile") : "fertile";
+        subColor = fertOffset !== null && fertOffset >= -2 ? "#047857" : "#059669";
       } else if (isPMS) {
         subLabel = "PMS 🌙";
         subColor = "#b45309";
@@ -980,11 +1175,15 @@ export default function PeriodTracker() {
         if (log?.mood)           tipLines.push(`Mood: ${log.mood}`);
         if (!log)                tipLines.push("Tap to log details");
       } else if (isOvulation) {
-        tipTitle = "Predicted ovulation";
-        tipLines = ["Estrogen peaks · Highest fertility"];
+        tipTitle = "✨ Ovulation · Peak Fertility";
+        tipLines = ["~33% conception probability", "LH surge · Egg release · Estrogen peak"];
       } else if (isFertile) {
-        tipTitle = "Fertile window";
-        tipLines = ["Higher chance of conception"];
+        const probMap   = { "-5": "~10%", "-4": "~16%", "-3": "~14%", "-2": "~27%", "-1": "~31%", "1": "~12%" };
+        const tierMap   = { "-5": "Low", "-4": "Low", "-3": "Moderate", "-2": "High", "-1": "High", "1": "Low" };
+        const tierLabel = fertOffset !== null ? (tierMap[String(fertOffset)] ?? "Moderate") : "Moderate";
+        const probLabel = fertOffset !== null ? (probMap[String(fertOffset)] ?? "~10%") : "~10%";
+        tipTitle = `${tierLabel} Fertility`;
+        tipLines = [`${probLabel} conception probability`, "Within your fertile window"];
       } else if (isPMS) {
         tipTitle = "PMS phase";
         tipLines = ["7 days before next period"];
@@ -1157,7 +1356,9 @@ export default function PeriodTracker() {
                       <div className="flex-1 min-w-0">
                         <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Cycle Health Score</p>
                         <p style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.65, marginBottom: 14, maxWidth: 340 }}>
-                          {insightMsg || "Log at least two cycles to unlock your personal health score and predictions."}
+                          {insightMsg || (analytics?.total_cycles_count >= 2
+                            ? "Log more cycles to continue improving your health score accuracy."
+                            : "Log a second cycle to unlock your cycle health score.")}
                         </p>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Prediction confidence</span>
@@ -1193,6 +1394,62 @@ export default function PeriodTracker() {
                             <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 3, fontWeight: 500 }}>{label}</div>
                           </div>
                         ))}
+                      </div>
+                    )}
+
+                    {/* ── Cycle Predictions ──────────────────────────────── */}
+                    {analytics?.predicted_next_period && (
+                      <div className="mt-5 pt-4" style={{ borderTop: "1px solid var(--border-color)" }}>
+                        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                          <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>Cycle Predictions</p>
+                          <div className="flex items-center gap-1.5">
+                            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Confidence</span>
+                            <span style={{ padding: "2px 9px", borderRadius: 999, fontSize: 10, fontWeight: 700, background: confStyle.bg, color: confStyle.text }}>{confLevel}</span>
+                            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>· {analytics.total_cycles_count} cycle{analytics.total_cycles_count !== 1 ? "s" : ""} logged</span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          {[
+                            {
+                              icon: "📅", label: "Cycle Day",
+                              value: cappedCycleDay ? `Day ${cappedCycleDay}` : "--",
+                              color: "var(--primary)",
+                            },
+                            {
+                              icon: "🩸", label: "Next Period",
+                              value: fmt(analytics.predicted_next_period, { month: "short", day: "numeric" }),
+                              color: "#e11d48",
+                            },
+                            {
+                              icon: "✨", label: "Ovulation",
+                              value: analytics.predicted_ovulation_date
+                                ? fmt(analytics.predicted_ovulation_date, { month: "short", day: "numeric" })
+                                : "--",
+                              color: "#7c3aed",
+                            },
+                            {
+                              icon: "🌿", label: "Fertile Window",
+                              value: analytics.fertile_window_start && analytics.fertile_window_end
+                                ? `${fmt(analytics.fertile_window_start, { month: "short", day: "numeric" })} – ${fmt(analytics.fertile_window_end, { month: "short", day: "numeric" })}`
+                                : "--",
+                              color: "#059669",
+                            },
+                          ].map(({ icon, label, value, color }) => (
+                            <div key={label} className="rounded-xl p-3"
+                              style={{ background: "var(--bg-main)", border: "1px solid var(--border-color)" }}>
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <span style={{ fontSize: 13 }}>{icon}</span>
+                                <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+                              </div>
+                              <p style={{ fontSize: 14, fontWeight: 800, color, lineHeight: 1.25, margin: 0 }}>{value}</p>
+                            </div>
+                          ))}
+                        </div>
+                        {analytics.total_cycles_count === 1 && (
+                          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>
+                            ⓘ Predictions are based on a standard 28-day cycle. Log a second cycle for personalised estimates.
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1272,7 +1529,156 @@ export default function PeriodTracker() {
                 </motion.div>
               )}
 
-              {/* Row 3: Actions + Calendar */}
+              {/* Fertility Intelligence Card */}
+              <FertilityIntelligenceCard analytics={analytics} todayStr={todayStr} />
+
+              {/* Row 2.5: Late Period • Irregular Cycle • Menstrual Cramps • PCOS Awareness Banners */}
+              {((!activeCycle && analytics?.is_delayed) || analytics?.is_irregular || analytics?.early_menstrual_cramps_detected || analytics?.pcos_awareness_flag) && (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
+                  className="flex flex-col gap-3 mb-4">
+
+                  {/* Late Period Insight */}
+                  {!activeCycle && analytics?.is_delayed && (
+                    <div className="rounded-2xl p-5 flex items-start gap-4"
+                      style={{ background: "linear-gradient(135deg,#fff7ed,#ffedd5)", border: "1px solid #fdba74", boxShadow: "0 2px 16px rgba(234,88,12,0.10)" }}>
+                      <span style={{ fontSize: 26, flexShrink: 0, lineHeight: 1 }}>⏰</span>
+                      <div className="flex-1 min-w-0">
+                        <p style={{ fontSize: 13, fontWeight: 800, color: "#92400e", marginBottom: 4 }}>
+                          Your period is {analytics.delay_days} day{analytics.delay_days !== 1 ? "s" : ""} later than your usual cycle pattern
+                        </p>
+                        <p style={{ fontSize: 12, color: "#b45309", lineHeight: 1.65, marginBottom: 10 }}>
+                          Based on your average {analytics.average_cycle_length}-day cycle, your period was expected {analytics.delay_days} day{analytics.delay_days !== 1 ? "s" : ""} ago. Occasional delays are common.
+                        </p>
+                        <ul className="flex flex-col gap-1.5">
+                          {[
+                            "Stress is one of the most common reasons cycles shift.",
+                            "Travel or disrupted sleep can temporarily affect hormone timing.",
+                            analytics.delay_days >= 10
+                              ? "Delay has exceeded 10 days — consider seeking medical advice."
+                              : "If the delay exceeds 10 days, consider medical advice or a pregnancy test.",
+                          ].map((tip, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span style={{ color: "#d97706", fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>•</span>
+                              <span style={{ fontSize: 12, color: "#92400e", lineHeight: 1.6 }}>{tip}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Irregular Cycle Insight */}
+                  {analytics?.is_irregular && (
+                    <div className="rounded-2xl p-5 flex items-start gap-4"
+                      style={{ background: "linear-gradient(135deg,#fffbeb,#fef3c7)", border: "1px solid #fde68a", boxShadow: "0 2px 16px rgba(245,158,11,0.08)" }}>
+                      <span style={{ fontSize: 26, flexShrink: 0, lineHeight: 1 }}>📊</span>
+                      <div className="flex-1 min-w-0">
+                        <p style={{ fontSize: 13, fontWeight: 800, color: "#78350f", marginBottom: 4 }}>
+                          Irregular cycle pattern detected
+                          {analytics.cycle_variability != null && (
+                            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
+                              background: "rgba(245,158,11,0.18)", color: "#92400e" }}>
+                              {analytics.cycle_variability}-day variation
+                            </span>
+                          )}
+                        </p>
+                        <p style={{ fontSize: 12, color: "#92400e", lineHeight: 1.65, marginBottom: 10 }}>
+                          Your cycle lengths have varied by more than 7 days across recent cycles. This fluctuation is often linked to stress, disrupted sleep, or hormonal shifts.
+                        </p>
+                        <ul className="flex flex-col gap-1.5">
+                          {[
+                            "Keep sleep and wake times consistent to support hormonal balance.",
+                            "Track stress levels and major routine changes to identify patterns.",
+                            "If irregularity continues across 3 or more cycles, a gynecologist consultation is recommended.",
+                          ].map((tip, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span style={{ color: "#d97706", fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>•</span>
+                              <span style={{ fontSize: 12, color: "#78350f", lineHeight: 1.6 }}>{tip}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Menstrual Cramps Insight */}
+                  {analytics?.early_menstrual_cramps_detected && (
+                    <div className="rounded-2xl p-5 flex items-start gap-4"
+                      style={{ background: "linear-gradient(135deg,#fff1f2,#ffe4e6)", border: "1px solid #fecaca", boxShadow: "0 2px 16px rgba(225,29,72,0.08)" }}>
+                      <span style={{ fontSize: 26, flexShrink: 0, lineHeight: 1 }}>🌡️</span>
+                      <div className="flex-1 min-w-0">
+                        <p style={{ fontSize: 13, fontWeight: 800, color: "#9f1239", marginBottom: 4 }}>
+                          You logged moderate to severe cramps during the first two days of your cycle.
+                        </p>
+                        <p style={{ fontSize: 12, color: "#be123c", lineHeight: 1.65, marginBottom: 10 }}>
+                          This pattern has repeated across recent cycles. Prostaglandins trigger uterine contractions during the menstrual phase — the steps below can help ease discomfort.
+                        </p>
+                        <ul className="flex flex-col gap-1.5">
+                          {[
+                            "Apply a warm compress or heating pad to your lower abdomen to relax uterine muscles.",
+                            "Stay well-hydrated — warm water and herbal teas like ginger or chamomile can ease cramping and reduce bloating.",
+                            "Light movement such as gentle stretching or a short walk improves circulation and reduces cramp intensity.",
+                          ].map((tip, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span style={{ color: "#e11d48", fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>•</span>
+                              <span style={{ fontSize: 12, color: "#9f1239", lineHeight: 1.6 }}>{tip}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PCOS Awareness Insight */}
+                  {analytics?.pcos_awareness_flag && (
+                    <div className="rounded-2xl p-5 flex items-start gap-4"
+                      style={{ background: "linear-gradient(135deg,#faf5ff,#ede9fe)", border: "1px solid #c4b5fd", boxShadow: "0 2px 16px rgba(124,58,237,0.08)" }}>
+                      <span style={{ fontSize: 26, flexShrink: 0, lineHeight: 1 }}>🔬</span>
+                      <div className="flex-1 min-w-0">
+                        {/* Title row with badge(s) */}
+                        <div className="flex items-center gap-2 flex-wrap mb-3">
+                          <p style={{ fontSize: 13, fontWeight: 800, color: "#5b21b6", margin: 0 }}>PCOS Awareness</p>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "rgba(124,58,237,0.12)", color: "#6d28d9" }}>
+                            {analytics.pcos_indicator_count} indicator{analytics.pcos_indicator_count !== 1 ? "s" : ""} detected
+                          </span>
+                          {analytics.pcos_ml_risk_level && (
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                              background: analytics.pcos_ml_risk_level === "High" ? "#fee2e2" : analytics.pcos_ml_risk_level === "Moderate" ? "#fef3c7" : "#f0fdf4",
+                              color:      analytics.pcos_ml_risk_level === "High" ? "#991b1b" : analytics.pcos_ml_risk_level === "Moderate" ? "#92400e" : "#166534",
+                            }}>
+                              ML: {analytics.pcos_ml_risk_level} Risk
+                            </span>
+                          )}
+                        </div>
+                        {/* Primary insight message */}
+                        <p style={{ fontSize: 12, color: "#6d28d9", lineHeight: 1.65, marginBottom: 10, fontWeight: 500 }}>
+                          {analytics.pcos_awareness_message}
+                        </p>
+                        {/* Supporting tips */}
+                        <ul className="flex flex-col gap-1.5 mb-4">
+                          {[
+                            "PCOS is not a diagnosis from cycle tracking alone — only a healthcare provider can confirm it through blood tests and ultrasound.",
+                            "Having irregular or consistently long cycles is one of the most common early signs — logging regularly strengthens this picture.",
+                            "If you haven't taken a PCOS risk assessment yet, OvaCare's tool provides an ML-based personalised risk estimate.",
+                          ].map((tip, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span style={{ color: "#7c3aed", fontSize: 14, lineHeight: 1.4, flexShrink: 0 }}>•</span>
+                              <span style={{ fontSize: 12, color: "#5b21b6", lineHeight: 1.6 }}>{tip}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <Link to="/assessment"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 12, fontSize: 13, fontWeight: 700, color: "white", background: "linear-gradient(135deg,#7c3aed,#a855f7)", textDecoration: "none", boxShadow: "0 4px 12px rgba(124,58,237,0.28)" }}>
+                          🔬 Take PCOS Assessment
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+
+                </motion.div>
+              )}
               <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
                 className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
 
@@ -1289,8 +1695,8 @@ export default function PeriodTracker() {
                         style={{ background: "linear-gradient(135deg,#fff7ed,#ffedd5)", border: "1px solid #fdba74" }}>
                         <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>⏰</span>
                         <div>
-                          <p style={{ fontSize: 13, fontWeight: 700, color: "#92400e", marginBottom: 3 }}>Period delayed by {analytics.delay_days} day{analytics.delay_days !== 1 ? "s" : ""}</p>
-                          <p style={{ fontSize: 12, color: "#b45309" }}>Consider logging your period if it has started.</p>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: "#92400e", marginBottom: 3 }}>Period is {analytics.delay_days} day{analytics.delay_days !== 1 ? "s" : ""} past its predicted date</p>
+                          <p style={{ fontSize: 12, color: "#b45309" }}>Log your period below if it has started, or check the insight above.</p>
                         </div>
                       </motion.div>
                     )}
@@ -1336,6 +1742,14 @@ export default function PeriodTracker() {
                       style={{ fontSize: 13, color: "var(--text-muted)", background: "transparent", border: "2px dashed var(--border-color)", cursor: "pointer" }}>
                       <span>📝</span> Log Entry (Missed a day?)
                     </button>
+
+                    {analytics && (
+                      <button onClick={() => setShowReport(true)}
+                        className="w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all"
+                        style={{ fontSize: 13, color: "var(--primary)", background: "color-mix(in srgb, var(--primary) 8%, transparent)", border: "1.5px solid color-mix(in srgb, var(--primary) 30%, transparent)", cursor: "pointer" }}>
+                        <span>🩺</span> Generate Doctor Report
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1372,8 +1786,8 @@ export default function PeriodTracker() {
                       {[
                         { fill: "#e11d48",                      border: "#e11d48", label: "Period"    },
                         { fill: "#fb7185",                      border: "#fb7185", label: "Log entry" },
-                        { fill: "rgba(124,58,237,0.13)",        border: "#a855f7", label: "Ovulation" },
-                        { fill: "rgba(5,150,105,0.15)",         border: "#10b981", label: "Fertile"   },
+                        { fill: "rgba(124,58,237,0.22)",        border: "#7c3aed", label: "Ovulation" },
+                        { fill: "rgba(5,150,105,0.20)",         border: "#059669", label: "Fertile window" },
                         { fill: "rgba(217,119,6,0.15)",         border: "#d97706", label: "PMS"       },
                         { fill: "transparent",                  border: "var(--primary)", label: "Today" },
                       ].map(({ fill, border, label }) => (
@@ -1415,19 +1829,28 @@ export default function PeriodTracker() {
                     },
                     {
                       icon: "💧", title: "Heavy Flow Days",
-                      metric: analytics.heavy_flow_count,
+                      metric: analytics.heavy_flow_days_latest ?? analytics.heavy_flow_count ?? 0,
                       max: 7,
-                      value: String(analytics.heavy_flow_count ?? 0) + " cycles",
-                      color: analytics.heavy_flow_count > 2 ? "#ef4444" : analytics.heavy_flow_count > 0 ? "#f59e0b" : "#10b981",
-                      desc: analytics.heavy_flow_count > 2 ? "Frequent heavy flow — worth discussing with a doctor." : analytics.heavy_flow_count > 0 ? "Some heavy flow cycles noted." : "No heavy flow cycles logged."
+                      value: String(analytics.heavy_flow_days_latest ?? analytics.heavy_flow_count ?? 0) + " days",
+                      color: (analytics.heavy_flow_days_latest ?? 0) > 2 ? "#ef4444" : (analytics.heavy_flow_days_latest ?? 0) > 0 ? "#f59e0b" : "#10b981",
+                      desc: (analytics.heavy_flow_days_latest ?? 0) > 2
+                        ? `${analytics.heavy_flow_days_latest} heavy-flow days logged — see insight below.`
+                        : (analytics.heavy_flow_days_latest ?? 0) > 0
+                        ? "Some heavy flow logged this cycle. Keep monitoring."
+                        : "No heavy flow days logged this cycle."
                     },
                     {
                       icon: "😣", title: "Pain Days",
-                      metric: analytics.high_pain_days,
+                      metric: analytics.pain_days_per_cycle?.at(-1) ?? analytics.high_pain_days ?? 0,
                       max: 10,
-                      value: String(analytics.high_pain_days ?? 0) + " days",
-                      color: analytics.high_pain_days > 5 ? "#ef4444" : analytics.high_pain_days > 2 ? "#f59e0b" : "#10b981",
-                      desc: analytics.high_pain_days > 5 ? "High pain frequency. Tracking patterns may help." : analytics.high_pain_days > 2 ? "Moderate pain reported across cycles." : "Low pain frequency."
+                      value: String(analytics.pain_days_per_cycle?.at(-1) ?? analytics.high_pain_days ?? 0) + " days",
+                      color: (analytics.pain_days_per_cycle?.at(-1) ?? analytics.high_pain_days ?? 0) > 5 ? "#ef4444" : (analytics.pain_days_per_cycle?.at(-1) ?? analytics.high_pain_days ?? 0) > 2 ? "#f59e0b" : "#10b981",
+                      desc: (() => {
+                        const pd = analytics.pain_days_per_cycle?.at(-1) ?? analytics.high_pain_days ?? 0;
+                        const ap = analytics.avg_pain_per_cycle?.at(-1) ?? 0;
+                        const base = pd > 5 ? "High pain frequency. Tracking patterns may help." : pd > 2 ? "Moderate pain reported across cycles." : "Low pain frequency.";
+                        return ap > 0 ? `${base} Avg pain: ${ap}/10 this cycle.` : base;
+                      })(),
                     },
                     {
                       icon: "😰", title: "Stress & PMS",
@@ -1460,9 +1883,18 @@ export default function PeriodTracker() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h2 style={{ fontSize: 17, fontWeight: 800, color: "var(--text-main)", margin: 0, marginBottom: 4 }}>Your Body Insights</h2>
-                      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>Personalized suggestions based on your cycle patterns</p>
+                      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                        {suggestions.length > 0
+                          ? `${suggestions.length} personalised recommendation${suggestions.length !== 1 ? "s" : ""} based on your cycle patterns`
+                          : "Personalised suggestions based on your cycle patterns"}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
+                      {suggestions.length > 0 && (
+                        <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700, background: "color-mix(in srgb, var(--primary) 12%, transparent)", color: "var(--primary)" }}>
+                          {suggestions.length}
+                        </span>
+                      )}
                       <span style={{ fontSize: 20 }}>✨</span>
                     </div>
                   </div>
@@ -1473,46 +1905,91 @@ export default function PeriodTracker() {
                       <span style={{ fontSize: 40 }}>🌱</span>
                       <div>
                         <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-main)", marginBottom: 6 }}>Building your insights...</p>
-                        <p style={{ fontSize: 13, color: "var(--text-muted)", maxWidth: 320, lineHeight: 1.7 }}>Keep logging your symptoms, flow, and mood to receive personalized health suggestions.</p>
+                        <p style={{ fontSize: 13, color: "var(--text-muted)", maxWidth: 320, lineHeight: 1.7 }}>Keep logging your symptoms, flow, and mood to receive personalised health suggestions.</p>
                       </div>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3">
                       {suggestions.map((sug, idx) => {
-                        const sevColor = sug.severity === "important" ? "#ef4444" : sug.severity === "monitor" ? "#f59e0b" : "#10b981";
-                        const sevBg = sug.severity === "important" ? "#fff1f2" : sug.severity === "monitor" ? "#fffbeb" : "#f0fdf4";
-                        const sevIcon = sug.severity === "important" ? "🔴" : sug.severity === "monitor" ? "🟡" : "🟢";
+                        const theme = INSIGHT_THEME[sug.id] || INSIGHT_THEME_DEFAULT;
                         const isExpanded = expandedSug === idx;
                         return (
                           <motion.div key={sug.id || idx} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }}
-                            className="rounded-xl overflow-hidden"
-                            style={{ borderLeft: `4px solid ${sevColor}`, background: sevBg, border: `1px solid ${sevColor}22` }}>
-                            <button className="w-full text-left p-4 flex items-start gap-3"
+                            className="rounded-2xl overflow-hidden"
+                            style={{ background: theme.bg, border: `1px solid ${theme.border}`, boxShadow: "0 2px 14px rgba(0,0,0,0.05)" }}>
+
+                            {/* Always-visible header row */}
+                            <button className="w-full text-left flex items-start gap-3"
                               onClick={() => setExpandedSug(isExpanded ? null : idx)}
-                              style={{ background: "none", border: "none", cursor: "pointer" }}>
-                              <span style={{ fontSize: 14, marginTop: 1, flexShrink: 0 }}>{sevIcon}</span>
-                              <div className="flex-1 min-w-0">
-                                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)", marginBottom: 3 }}>{sug.title}</p>
-                                <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.65 }}>{sug.message}</p>
+                              style={{ padding: "16px 18px 14px", background: "none", border: "none", cursor: "pointer" }}>
+
+                              {/* Themed icon bubble */}
+                              <div style={{
+                                width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+                                background: theme.catBg, border: `1.5px solid ${theme.border}`,
+                                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
+                              }}>
+                                {sug.icon || theme.icon}
                               </div>
-                              {sug.actions?.length > 0 && (
-                                <motion.span animate={{ rotate: isExpanded ? 180 : 0 }} style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 2, flexShrink: 0 }}>▼</motion.span>
+
+                              <div className="flex-1 min-w-0">
+                                {/* Category chip */}
+                                <span style={{
+                                  display: "inline-block", marginBottom: 6, fontSize: 10, fontWeight: 700,
+                                  padding: "2px 9px", borderRadius: 999,
+                                  background: theme.catBg, color: theme.catFg, border: `1px solid ${theme.border}`,
+                                }}>
+                                  {sug.category || theme.cat}
+                                </span>
+                                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)", marginBottom: 5, lineHeight: 1.4 }}>{sug.title}</p>
+                                <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.65, margin: 0 }}>{sug.message}</p>
+
+                                {/* Quick-tip preview — first action shown while collapsed */}
+                                {sug.actions?.length > 0 && !isExpanded && (
+                                  <div className="flex items-start gap-2 mt-3 rounded-xl"
+                                    style={{ padding: "10px 12px", background: "rgba(255,255,255,0.65)", border: `1px solid ${theme.border}` }}>
+                                    <span style={{ fontSize: 13, flexShrink: 0 }}>💡</span>
+                                    <span style={{
+                                      fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6,
+                                      display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+                                    }}>{sug.actions[0]}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {sug.actions?.length > 1 && (
+                                <motion.div animate={{ rotate: isExpanded ? 180 : 0 }}
+                                  style={{ color: theme.accent, fontSize: 11, marginTop: 2, flexShrink: 0, fontWeight: 700, paddingTop: 2 }}>▼</motion.div>
                               )}
                             </button>
+
+                            {/* Expanded: full action steps */}
                             <AnimatePresence>
                               {isExpanded && sug.actions?.length > 0 && (
                                 <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                                   transition={{ duration: 0.22 }} style={{ overflow: "hidden" }}>
-                                  <div className="px-4 pb-4 pt-1">
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Suggested Actions</p>
-                                    <ul className="flex flex-col gap-2">
+                                  <div style={{ padding: "14px 18px 18px", borderTop: `1px solid ${theme.border}` }}>
+                                    <p style={{ fontSize: 10, fontWeight: 800, color: theme.accent, textTransform: "uppercase", letterSpacing: "0.09em", marginBottom: 12 }}>
+                                      {sug.actions.length} Action Step{sug.actions.length !== 1 ? "s" : ""}
+                                    </p>
+                                    <ul className="flex flex-col gap-2.5">
                                       {sug.actions.map((act, ai) => (
-                                        <li key={ai} className="flex items-start gap-2">
-                                          <span style={{ fontSize: 11, fontWeight: 700, minWidth: 20, height: 20, borderRadius: "50%", background: sevColor, color: "white", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>{ai + 1}</span>
-                                          <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>{act}</span>
+                                        <li key={ai} className="flex items-start gap-3">
+                                          <span style={{
+                                            fontSize: 10, fontWeight: 800, minWidth: 22, height: 22, borderRadius: 7,
+                                            background: theme.catBg, color: theme.catFg, border: `1px solid ${theme.border}`,
+                                            display: "flex", alignItems: "center", justifyContent: "center",
+                                            flexShrink: 0, marginTop: 1,
+                                          }}>{ai + 1}</span>
+                                          <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.65 }}>{act}</span>
                                         </li>
                                       ))}
                                     </ul>
+                                    {sug.subtext && (
+                                      <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12, lineHeight: 1.6, fontStyle: "italic", borderTop: `1px solid ${theme.border}`, paddingTop: 10 }}>
+                                        {sug.subtext}
+                                      </p>
+                                    )}
                                   </div>
                                 </motion.div>
                               )}
@@ -1658,6 +2135,18 @@ export default function PeriodTracker() {
             onClose={() => setModal(null)}
             onSaved={fetchAll}
             showToast={showToast}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showReport && analytics && (
+          <CycleDoctorReportModal
+            analytics={analytics}
+            cycles={cycles}
+            dailyLogs={dailyLogs}
+            user={user}
+            onClose={() => setShowReport(false)}
           />
         )}
       </AnimatePresence>

@@ -1,5 +1,6 @@
 import Cycle from "../models/Cycle.js";
 import DailyLog from "../models/DailyLog.js";
+import PCOSReport from "../models/PCOSReport.js";
 
 const BLEEDING_INTENSITIES = ["Spotting", "Light", "Medium", "Heavy", "Very Heavy"];
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -121,7 +122,8 @@ export const createCycle = async (req, res) => {
     const cycle = await Cycle.create({
       user_id: req.user.userId,
       period_start: selectedDay,
-      period_end:   selectedDay,
+      period_end:   null,
+      is_active:    true,
       flow_intensity,
       symptoms,
       mood,
@@ -412,50 +414,39 @@ export const startPeriod = async (req, res) => {
 
 export const endPeriod = async (req, res) => {
   try {
-    const today = dayOnly(new Date());
+    const { end_date } = req.body;
 
-    // Only look for a genuinely open cycle (period_end: null).
-    // Ignoring the is_active flag avoids closing stale legacy cycles that
-    // already have a real period_end but were left with is_active: true.
-    const activeCycle = await Cycle.findOne({
+    if (!end_date) {
+      return res.status(400).json({ message: "end_date is required." });
+    }
+
+    const endDate = new Date(end_date);
+    endDate.setUTCHours(0, 0, 0, 0);
+
+    if (isNaN(endDate.getTime())) {
+      return res.status(400).json({ message: "end_date is not a valid date." });
+    }
+
+    const cycle = await Cycle.findOne({
       user_id:    req.user.userId,
       period_end: null,
-    }).sort({ period_start: -1 });
+    });
 
-    if (!activeCycle) {
+    if (!cycle) {
       return res.status(404).json({ message: "No active period found." });
     }
 
-    // If the user provides an explicit end_date (manual correction), use it
-    // as long as it falls on or after period_start and is not in the future.
-    let periodEnd;
-    if (req.body.end_date) {
-      const supplied = dayOnly(req.body.end_date);
-      if (supplied < dayOnly(activeCycle.period_start)) {
-        return res.status(400).json({ message: "End date cannot be before the period start date." });
-      }
-      if (supplied > today) {
-        return res.status(400).json({ message: "End date cannot be in the future." });
-      }
-      periodEnd = supplied;
-    } else {
-      // Auto-detect: use the last logged flow day so we don't over-shoot.
-      const lastFlowLog = await DailyLog.findOne({
-        user_id:        req.user.userId,
-        flow_intensity: { $in: BLEEDING_INTENSITIES },
-        date:           { $gte: activeCycle.period_start, $lte: today },
-      }).sort({ date: -1 });
-      periodEnd = lastFlowLog ? dayOnly(lastFlowLog.date) : today;
+    if (endDate < cycle.period_start) {
+      return res.status(400).json({ message: "End date cannot be before the period start date." });
     }
 
-    // Use explicit $set so Mongoose 8 cannot treat it as a document replacement.
-    const updated = await Cycle.findByIdAndUpdate(
-      activeCycle._id,
-      { $set: { period_end: periodEnd, is_active: false } },
-      { new: true }
-    );
+    console.log("END DATE SENT:", end_date);
 
-    return res.status(200).json({ success: true, cycle: updated });
+    cycle.period_end = endDate;
+    cycle.is_active  = false;
+    await cycle.save();
+
+    return res.status(200).json({ success: true, cycle });
   } catch (err) {
     console.error("[END PERIOD]", err.message);
     res.status(500).json({ message: "Failed to end period" });
@@ -565,19 +556,61 @@ export const getCycleAnalytics = async (req, res) => {
         ? Math.round(bleedingDurations.reduce((a, b) => a + b, 0) / bleedingDurations.length)
         : null;
 
-    // ── 1 cycle — basic stats only, no suggestions yet ────────────────────────
+    // ── 1 cycle — baseline predictions with Low confidence ────────────────────
     if (total_cycles_count < 2) {
+      // With a single cycle we fall back to a 28-day standard cycle to give
+      // the user an immediately useful set of predictions.  Confidence stays
+      // Low until a second data point confirms the pattern.
+      const DEFAULT_CYCLE_LENGTH = 28;
+      const singleStart        = new Date(cycles[0].period_start);
+      const predictedNext      = new Date(singleStart);
+      predictedNext.setDate(predictedNext.getDate() + DEFAULT_CYCLE_LENGTH);
+      const predictedOvulation = new Date(predictedNext);
+      predictedOvulation.setDate(predictedOvulation.getDate() - 14);
+      const fertileStart       = new Date(predictedOvulation);
+      fertileStart.setDate(fertileStart.getDate() - 5);
+      const fertileEnd         = new Date(predictedOvulation);
+      fertileEnd.setDate(fertileEnd.getDate() + 1);
+
+      // Compute pain stats for the single logged cycle
+      const oneCycleStart    = dayOnly(cycles[0].period_start);
+      const oneCycleEnd      = cycles[0].period_end ? dayOnly(cycles[0].period_end) : dayOnly(new Date());
+      const oneCyclePainLogs = await DailyLog.find(
+        { user_id: req.user.userId, date: { $gte: oneCycleStart, $lte: oneCycleEnd }, pain_level: { $gte: 1 } },
+        { pain_level: 1 }
+      ).lean();
+      const singlePainDays = oneCyclePainLogs.length;
+      const singleAvgPain  = singlePainDays > 0
+        ? +(oneCyclePainLogs.reduce((s, l) => s + l.pain_level, 0) / singlePainDays).toFixed(1)
+        : 0;
+
       return res.status(200).json({
         total_cycles_count,
-        average_cycle_length:     null,
+        average_cycle_length:     DEFAULT_CYCLE_LENGTH,  // assumed — no real gap data yet
         average_bleeding_duration,
-        predicted_next_period:    null,
+        predicted_next_period:    predictedNext,
+        predicted_ovulation_date: predictedOvulation,
+        fertile_window_start:     fertileStart,
+        fertile_window_end:       fertileEnd,
+        cycle_variability:        null,
+        is_irregular:             false,
+        is_delayed:               false,
+        delay_days:               0,
+        missed_cycle:             false,
+        prolonged_bleeding:       false,
+        heavy_flow_count:         0,
+        high_pain_days:           0,
+        high_stress_days:         0,
+        pms_mood_swings_count:    0,
+        pain_days_per_cycle:             [singlePainDays],
+        avg_pain_per_cycle:              [singleAvgPain],
+        early_menstrual_cramps_detected: false,
         prediction_confidence:    "Low",
         health_flag_level:        "Normal",
         cycle_health_score:       null,
         cycle_health_status:      "Not enough data",
         cycle_insight_message:    null,
-        suggestions_info:         "Log at least 2 cycles to unlock predictions and health insights.",
+        suggestions_info:         "Log a second cycle to improve prediction accuracy and unlock your health score.",
         suggestions:              [],
       });
     }
@@ -631,9 +664,9 @@ export const getCycleAnalytics = async (req, res) => {
     // is_irregular: average > 35 days OR variability > 7
     const is_irregular = average_cycle_length > 35 || cycle_variability > 7;
 
-    // is_delayed: today > predicted_next_period + 5 days
+    // is_delayed: today > predicted_next_period + 3 days
     const delayThreshold = new Date(predicted_next_period);
-    delayThreshold.setDate(delayThreshold.getDate() + 5);
+    delayThreshold.setDate(delayThreshold.getDate() + 3);
     const is_delayed = today > delayThreshold;
     const delay_days = is_delayed
       ? Math.round((today - predicted_next_period) / MS_PER_DAY)
@@ -649,8 +682,11 @@ export const getCycleAnalytics = async (req, res) => {
       (average_bleeding_duration !== null && average_bleeding_duration > 7);
 
     // ── Prediction confidence ─────────────────────────────────────────────────
+    // 1 cycle  → Low    (handled in early-return above)
+    // 2–3 cycles → Medium  (pattern emerging)
+    // 4+ cycles  → High   (well-established)
     const prediction_confidence =
-      total_cycles_count <= 4 ? "Medium" : "High";
+      total_cycles_count <= 3 ? "Medium" : "High";
 
     // ── Health flag level ─────────────────────────────────────────────────────
     let health_flag_level;
@@ -667,28 +703,28 @@ export const getCycleAnalytics = async (req, res) => {
     // Use last 2 cycles as the observation window
     const lastTwoCycles = cycles.slice(-2);
     const windowStart   = dayOnly(lastTwoCycles[0].period_start);
+    // For active (still-open) cycles use today so daily logs during the
+    // current bleed are included in the observation window.
     const windowEnd     = latestCycle.period_end
       ? dayOnly(latestCycle.period_end)
-      : dayOnly(latestCycle.period_start);
+      : dayOnly(new Date());
 
-    // heavy_flow_count: total bleeding days across last 2 cycles with Heavy/Very Heavy flow
+    // heavy_flow_count: days in the observation window where the user actually
+    // logged Heavy or Very Heavy flow in their DailyLog (accurate per-day data).
     const HEAVY_INTENSITIES = ["Heavy", "Very Heavy"];
-    const heavy_flow_count = lastTwoCycles.reduce((sum, c) => {
-      if (!HEAVY_INTENSITIES.includes(c.flow_intensity)) return sum;
-      const days = c.period_end
-        ? Math.max(1, Math.round((new Date(c.period_end) - new Date(c.period_start)) / MS_PER_DAY) + 1)
-        : 1;
-      return sum + days;
-    }, 0);
 
-    // PMS window: 7 days before latest period start (exclusive of period start)
+    // PMS window: 5 days before latest period start (exclusive of period start)
+    // Used for the single-cycle pms_mood_swings_count metric query below.
     const pmsWindowEnd   = new Date(latestPeriodStart);
     pmsWindowEnd.setDate(pmsWindowEnd.getDate() - 1);
     const pmsWindowStart = new Date(latestPeriodStart);
-    pmsWindowStart.setDate(pmsWindowStart.getDate() - 7);
+    pmsWindowStart.setDate(pmsWindowStart.getDate() - 5);
+
+    // Latest-cycle window bounds (for per-cycle heavy-flow detection)
+    const latestCycleStart = dayOnly(latestCycle.period_start);
 
     // Run DailyLog queries in parallel
-    const [high_pain_days, high_stress_days, pms_mood_swings_count] = await Promise.all([
+    const [high_pain_days, high_stress_days, pms_mood_swings_count, heavy_flow_count, heavy_flow_days_latest, pcos_acne_days, pcosLatestReport] = await Promise.all([
       DailyLog.countDocuments({
         user_id:    req.user.userId,
         date:       { $gte: windowStart, $lte: windowEnd },
@@ -699,12 +735,222 @@ export const getCycleAnalytics = async (req, res) => {
         date:         { $gte: windowStart, $lte: windowEnd },
         stress_level: "High",
       }),
+      // Moods are stored as emoji strings in DailyLog (matching what the
+      // frontend sends from the emoji picker: 😤 Irritable · 😢 Sad · 🤒 Unwell · 😴 Tired)
       DailyLog.countDocuments({
         user_id: req.user.userId,
         date:    { $gte: pmsWindowStart, $lte: pmsWindowEnd },
-        mood:    { $in: ["Irritable", "Anxious", "Sad"] },
+        mood:    { $in: ["😤", "😢", "🤒", "😴"] },
       }),
+      // heavy_flow_count: Heavy/Very Heavy days across last 2-cycle window (for metric display)
+      DailyLog.countDocuments({
+        user_id:        req.user.userId,
+        date:           { $gte: windowStart, $lte: windowEnd },
+        flow_intensity: { $in: HEAVY_INTENSITIES },
+      }),
+      // heavy_flow_days_latest: Heavy/Very Heavy days in the latest cycle only (for insight trigger)
+      DailyLog.countDocuments({
+        user_id:        req.user.userId,
+        date:           { $gte: latestCycleStart, $lte: windowEnd },
+        flow_intensity: { $in: HEAVY_INTENSITIES },
+      }),
+      // pcos_acne_days: days in the observation window where "Acne" was logged as a symptom
+      // (androgen-excess indicator relevant to PCOS awareness scoring)
+      DailyLog.countDocuments({
+        user_id:  req.user.userId,
+        date:     { $gte: windowStart, $lte: windowEnd },
+        symptoms: { $in: ["Acne"] },
+      }),
+      // Latest saved PCOS ML report for this user — null when no assessment has been done
+      PCOSReport.findOne({ user_id: req.user.userId }).sort({ created_at: -1 }).lean(),
     ]);
+
+    // ── Per-cycle pain analytics ──────────────────────────────────────────────
+    // For each of the last 2 cycles: count pain days (pain_level ≥ 1), compute
+    // average pain level, and detect if pain_level ≥ 6 was logged on cycle
+    // days 1–2 (early menstrual phase).
+    const perCyclePainData = await Promise.all(
+      lastTwoCycles.map(async (cycle) => {
+        const cStart = dayOnly(cycle.period_start);
+        const cEnd   = cycle.period_end ? dayOnly(cycle.period_end) : dayOnly(new Date());
+        // Day 2 of this cycle (period_start + 1 day, UTC-safe)
+        const day2 = new Date(cStart);
+        day2.setUTCDate(day2.getUTCDate() + 1);
+
+        const [painLogs, earlyPainDoc] = await Promise.all([
+          DailyLog.find(
+            { user_id: req.user.userId, date: { $gte: cStart, $lte: cEnd }, pain_level: { $gte: 1 } },
+            { pain_level: 1 }
+          ).lean(),
+          DailyLog.findOne(
+            { user_id: req.user.userId, date: { $gte: cStart, $lte: day2 }, pain_level: { $gte: 6 } },
+            { _id: 1 }
+          ).lean(),
+        ]);
+
+        const painDays = painLogs.length;
+        const avgPain  = painDays > 0
+          ? +(painLogs.reduce((s, l) => s + l.pain_level, 0) / painDays).toFixed(1)
+          : 0;
+
+        return { painDays, avgPain, hasEarlyHighPain: !!earlyPainDoc };
+      })
+    );
+
+    const pain_days_per_cycle             = perCyclePainData.map((d) => d.painDays);
+    const avg_pain_per_cycle              = perCyclePainData.map((d) => d.avgPain);
+    // Triggered when pain_level ≥ 6 on cycle days 1–2 was detected in both
+    // of the last 2 cycles (i.e. the pattern is recurring / "repeated").
+    const early_menstrual_cramps_detected = perCyclePainData.filter((d) => d.hasEarlyHighPain).length >= 2;
+
+    // ── PCOS Risk Awareness scoring ───────────────────────────────────────────
+    // Scores independent cycle-derived and symptom signals against known PCOS
+    // indicators.  When 2 or more are present we surface an awareness insight —
+    // explicitly NOT a clinical diagnosis.
+    //
+    // Indicators (each scores 1 point):
+    //   1. is_irregular       — high cycle variability (> 7 days) or avg > 35 days
+    //   2. long_cycles        — average cycle length strictly > 35 days (oligomenorrhea)
+    //   3. missed_cycles      — any gap exceeding 45 days in recorded history
+    //   4. acne_pattern       — "Acne" logged on 3+ days in the 2-cycle window
+    //   5. ml_assessment      — user's latest PCOS report returned Moderate or High risk
+
+    const pcos_indicator_details = [];
+
+    if (is_irregular)                  pcos_indicator_details.push("irregular_cycles");
+    if (average_cycle_length > 35)     pcos_indicator_details.push("long_cycles");
+    if (missed_cycle)                  pcos_indicator_details.push("missed_cycles");
+    if (pcos_acne_days >= 3)           pcos_indicator_details.push("acne_pattern");
+
+    const pcos_ml_risk_level  = pcosLatestReport?.risk_level  || null;
+    const pcos_ml_report_id   = pcosLatestReport?._id?.toString() || null;
+    if (pcos_ml_risk_level === "High" || pcos_ml_risk_level === "Moderate") {
+      pcos_indicator_details.push("ml_assessment");
+    }
+
+    const pcos_indicator_count = pcos_indicator_details.length;
+    const pcos_awareness_flag  = pcos_indicator_count >= 2;
+
+    // Build a context-aware primary message derived from the top indicators
+    let pcos_awareness_message = null;
+    if (pcos_awareness_flag) {
+      const hasLong    = pcos_indicator_details.includes("long_cycles");
+      const hasMissed  = pcos_indicator_details.includes("missed_cycles");
+      const hasIrreg   = pcos_indicator_details.includes("irregular_cycles");
+      const hasMlRisk  = pcos_indicator_details.includes("ml_assessment");
+
+      if (hasLong || hasMissed) {
+        pcos_awareness_message =
+          "Your cycle pattern shows longer-than-usual intervals that may be associated with PCOS. " +
+          "Cycles consistently over 35 days, or significant gaps between periods, can indicate oligo-ovulation — " +
+          "one of the key clinical criteria for PCOS. This is not a diagnosis; screening can clarify the picture.";
+      } else if (hasIrreg && hasMlRisk) {
+        pcos_awareness_message =
+          "Your cycle irregularity, combined with signals from your PCOS risk assessment, suggests it " +
+          "may be worth discussing PCOS screening with a healthcare provider. Early awareness supports earlier, easier management.";
+      } else {
+        pcos_awareness_message =
+          "Your cycle pattern shows irregular intervals that may be associated with PCOS. " +
+          "This is not a diagnosis — awareness and early screening are key steps toward understanding your hormonal health.";
+      }
+    }
+
+    // ── Cross-cycle PMS pattern analysis ──────────────────────────────────────
+    // Examine the 5 days before each period_start across the last 3 cycles.
+    // If the same mood/symptom category repeats in ≥2 of those windows it is
+    // flagged as a recurring PMS pattern, and we compute the average number of
+    // days before the period that the dominant symptom typically appears.
+    const PMS_MOOD_LABELS = {
+      "😤": "irritability",
+      "😢": "mood swings",
+      "😴": "fatigue",
+      "🤒": "feeling unwell",
+    };
+
+    const pmsCyclesPool = cycles.filter((c) => c.period_start).slice(-3);
+    let pms_detected           = false;
+    let pms_dominant_symptom   = null;
+    let pms_avg_days_before    = null;
+    let pms_recurring_symptoms = [];
+    let pms_cycles_affected    = 0;
+
+    if (pmsCyclesPool.length >= 2) {
+      // Build one date window per cycle: days −5 to −1 relative to period_start
+      const pmsWindows = pmsCyclesPool.map((c) => {
+        const ps  = dayOnly(new Date(c.period_start));
+        const end = new Date(ps);  end.setDate(end.getDate() - 1);
+        const st  = new Date(ps);  st.setDate(st.getDate() - 5);
+        return { periodStart: ps, winStart: dayOnly(st), winEnd: dayOnly(end) };
+      });
+
+      // Single DailyLog query spanning the union of all windows
+      const qStart = pmsWindows.reduce((m, w) => w.winStart < m ? w.winStart : m, pmsWindows[0].winStart);
+      const qEnd   = pmsWindows.reduce((m, w) => w.winEnd   > m ? w.winEnd   : m, pmsWindows[0].winEnd);
+
+      const rawPmsLogs = await DailyLog.find({
+        user_id: req.user.userId,
+        date:    { $gte: qStart, $lte: qEnd },
+        $or: [
+          { mood:         { $in: Object.keys(PMS_MOOD_LABELS) } },
+          { stress_level: "High"                                },
+          { symptoms:     { $in: ["Fatigue", "Mood swings", "Anxiety"] } },
+        ],
+      }).lean();
+
+      // Derive PMS symptom categories from a single log document
+      const getCategories = (l) => {
+        const cats = new Set();
+        if (l.mood && PMS_MOOD_LABELS[l.mood])    cats.add(PMS_MOOD_LABELS[l.mood]);
+        if (l.stress_level === "High")            cats.add("elevated stress");
+        if (l.symptoms?.includes("Fatigue"))      cats.add("fatigue");
+        if (l.symptoms?.includes("Mood swings"))  cats.add("mood swings");
+        if (l.symptoms?.includes("Anxiety"))      cats.add("anxiety");
+        return cats;
+      };
+
+      // Per-category: count windows it appeared in + accumulate days-before values
+      const catWindowCount = {};  // { cat → number of cycle windows }
+      const catDaysBefore  = {};  // { cat → [daysBefore, ...] }
+
+      for (const w of pmsWindows) {
+        const logsInWin    = rawPmsLogs.filter(
+          (l) => l.date.getTime() >= w.winStart.getTime() && l.date.getTime() <= w.winEnd.getTime()
+        );
+        const seenInWindow = new Set();
+
+        for (const l of logsInWin) {
+          const daysBefore = Math.round(
+            (w.periodStart.getTime() - l.date.getTime()) / MS_PER_DAY
+          );
+          for (const cat of getCategories(l)) {
+            seenInWindow.add(cat);
+            if (!catDaysBefore[cat]) catDaysBefore[cat] = [];
+            catDaysBefore[cat].push(daysBefore);
+          }
+        }
+
+        for (const cat of seenInWindow) {
+          catWindowCount[cat] = (catWindowCount[cat] || 0) + 1;
+        }
+      }
+
+      // Recurring = appears in the pre-period window of ≥2 different cycles
+      pms_recurring_symptoms = Object.entries(catWindowCount)
+        .filter(([, n]) => n >= 2)
+        .sort(([, a], [, b]) => b - a)
+        .map(([cat]) => cat);
+
+      pms_detected = pms_recurring_symptoms.length > 0;
+
+      if (pms_detected) {
+        pms_dominant_symptom = pms_recurring_symptoms[0];
+        pms_cycles_affected  = catWindowCount[pms_dominant_symptom];
+        const days           = catDaysBefore[pms_dominant_symptom] || [];
+        pms_avg_days_before  = days.length
+          ? Math.round(days.reduce((a, b) => a + b, 0) / days.length)
+          : null;
+      }
+    }
 
     // ── Build suggestions ─────────────────────────────────────────────────────
     const suggestions = [];
@@ -713,6 +959,8 @@ export const getCycleAnalytics = async (req, res) => {
     if (missed_cycle) {
       suggestions.push({
         id:       "missed_cycle",
+        icon:     "⚠️",
+        category: "Cycle Pattern",
         severity: "important",
         title:    "Possible missed cycle",
         message:
@@ -729,14 +977,19 @@ export const getCycleAnalytics = async (req, res) => {
     if (is_delayed && !missed_cycle) {
       suggestions.push({
         id:       "delayed_period",
+        icon:     "⏰",
+        category: "Cycle Pattern",
         severity: "important",
-        title:    `Period may be ${delay_days} day${delay_days !== 1 ? "s" : ""} late`,
+        title:    `Your period is ${delay_days} day${delay_days !== 1 ? "s" : ""} later than your usual cycle pattern`,
         message:
-          "A late period can sometimes happen due to stress, changes in routine, travel, or hormonal shifts — it is more common than you might think.",
+          `Based on your average ${average_cycle_length}-day cycle, your period was expected ${delay_days} day${delay_days !== 1 ? "s" : ""} ago. Occasional delays are common and usually not a cause for alarm.`,
         actions: [
-          "Try keeping sleep and meal times consistent over the next few days.",
-          "Take note of any recent stressors or significant changes.",
-          "If the delay continues beyond 2 weeks, a healthcare provider visit can help clarify things.",
+          "Stress is one of the most common reasons cycles shift — try to identify and manage any recent stressors.",
+          "Travel or disrupted sleep can temporarily affect hormone timing and delay your period.",
+          delay_days >= 10
+            ? "Your delay has exceeded 10 days — consider seeking medical advice or taking a pregnancy test if applicable."
+            : "If the delay exceeds 10 days, consider medical advice or a pregnancy test if applicable.",
+          "If delays persist across multiple cycles, a healthcare provider can help identify the underlying cause.",
         ],
       });
     }
@@ -745,14 +998,18 @@ export const getCycleAnalytics = async (req, res) => {
     if (is_irregular && !missed_cycle) {
       suggestions.push({
         id:       "irregular_cycle",
+        icon:     "😴",
+        category: "Sleep & Rhythm",
         severity: "monitor",
-        title:    "Cycle irregularity noticed",
+        title:    `Irregular cycle pattern detected${cycle_variability != null ? ` — ${cycle_variability}-day variation` : ""}`,
         message:
-          "Your cycle length has been fluctuating more than usual. This can happen due to stress, hormonal shifts, or lifestyle changes.",
+          `Your cycle lengths have varied by more than 7 days across recent cycles${cycle_variability != null ? ` (variability: ${cycle_variability} days)` : ""}. This kind of fluctuation is often linked to stress, disrupted sleep, dietary changes, or hormonal shifts.`,
         actions: [
-          "Try keeping sleep and wake times consistent for 7 days.",
-          "Track stress and cravings daily to spot patterns.",
-          "If irregularity continues for 3 or more cycles, consider a gynecologist consultation.",
+          "Aim to go to bed and wake up within 30 minutes of the same time every day — including weekends. This consistency anchors your circadian rhythm, which directly governs the hormone release that regulates your cycle.",
+          "A warm shower or bath 1–2 hours before bed accelerates your body's core temperature drop — the key signal that triggers quality sleep onset and deeper, more restorative sleep stages.",
+          "Reduce bright screen light (phone, TV, laptop) after 9 pm. Blue light suppresses melatonin production, which is closely linked to the hormones that regulate your menstrual cycle length.",
+          "Eat your last main meal at least 2–3 hours before bedtime. Overnight metabolic stability supports the hormonal regulation that influences cycle timing and length.",
+          "If irregularity continues for 3 or more consecutive cycles, a gynecologist consultation is recommended — irregular cycles can sometimes reflect thyroid, adrenal, or reproductive hormonal imbalances.",
         ],
       });
     }
@@ -761,30 +1018,39 @@ export const getCycleAnalytics = async (req, res) => {
     if (prolonged_bleeding) {
       suggestions.push({
         id:       "prolonged_bleeding",
+        icon:     "📅",
+        category: "Flow & Bleeding",
         severity: "important",
         title:    "Periods lasting longer than usual",
         message:
           "Your recent period may have lasted longer than 7 days. While occasional variation can happen, a recurring pattern is worth paying attention to.",
         actions: [
-          "Rest well and stay hydrated during your period.",
-          "Track your bleeding intensity each day to monitor any changes.",
-          "If bleeding regularly lasts more than 7 days, speaking with a healthcare provider is a good idea.",
+          "Rest well and stay well-hydrated — aim for at least 2–3 litres of water daily to offset the extra fluid loss from prolonged bleeding.",
+          "Prioritise iron-rich foods throughout this period: spinach, lentils, fortified cereals, and red meat help replenish stores lost through extended bleeding.",
+          "Track your bleeding intensity each day using your flow log — noting whether it is increasing, stable, or tapering helps identify whether the pattern is worsening.",
+          "If bleeding regularly lasts more than 7 days or is accompanied by large clots or significant fatigue, speaking with a healthcare provider is strongly recommended.",
         ],
       });
     }
 
-    // 5. Heavy flow repeated (>= 3 heavy-flow days across last 2 cycles)
-    if (heavy_flow_count >= 3) {
+    // 5. Heavy bleeding in latest cycle (> 2 heavy-flow days logged in the current/last cycle)
+    if (heavy_flow_days_latest > 2) {
       suggestions.push({
         id:       "heavy_flow",
-        severity: heavy_flow_count >= 5 ? "important" : "monitor",
-        title:    "Heavy flow pattern noticed",
+        icon:     "💧",
+        category: "Nutrition & Hydration",
+        severity: heavy_flow_days_latest >= 5 ? "important" : "monitor",
+        title:    `You reported heavy bleeding for ${heavy_flow_days_latest} day${heavy_flow_days_latest !== 1 ? "s" : ""} during your last cycle`,
         message:
-          "Several of your recent period days have been marked as heavy or very heavy. This can sometimes be linked to hormonal fluctuations or other factors.",
+          `Logging ${heavy_flow_days_latest} days of heavy or very heavy flow in a single cycle is above average. Replenishing fluids and iron is the most important thing you can do to support your body right now.`,
         actions: [
-          "Stay well-hydrated and include iron-rich foods like spinach or lentils during your cycle.",
-          "Track your flow intensity each day to monitor any changes.",
-          "If heavy flow is consistent across multiple cycles, a medical consultation may help.",
+          "Aim for at least 2–3 litres of water daily during heavy flow days. Significant bleeding increases fluid loss — dehydration worsens fatigue, headaches, and cramping.",
+          "Eat iron-rich foods every day: dark leafy greens (spinach, kale), lentils, fortified cereals, and red meat are the highest-yield sources for replenishing iron stores.",
+          "Always pair iron-rich foods with vitamin C — a glass of orange juice, bell peppers, or tomatoes alongside your meal increases iron absorption by up to three times.",
+          "Limit caffeine and alcohol on heavy-flow days; both act as diuretics that promote fluid loss and can worsen cramping, fatigue, and dizziness.",
+          heavy_flow_days_latest >= 7
+            ? "Bleeding for 7 or more days is considered prolonged — consult a doctor to rule out underlying causes such as fibroids, polyps, or a hormonal imbalance."
+            : "If heavy bleeding recurs across multiple cycles, a healthcare provider can assess underlying causes and discuss options to manage flow.",
         ],
       });
     }
@@ -793,46 +1059,131 @@ export const getCycleAnalytics = async (req, res) => {
     if (high_pain_days >= 2) {
       suggestions.push({
         id:       "high_pain_days",
+        icon:     "🌿",
+        category: "Movement & Relief",
         severity: "monitor",
         title:    "Recurring period pain noticed",
         message:
-          "You have logged significant pain on multiple days recently. Managing pain proactively can help you feel more comfortable during your cycle.",
+          "You have logged significant pain on multiple days recently. Targeted movement and anti-inflammatory nutrition can meaningfully reduce menstrual pain over time.",
         actions: [
-          "Try a warm compress or gentle stretching on painful days.",
-          "Note when pain peaks — whether before, during, or after your period.",
-          "If pain consistently rates 7 or above, a medical consultation may provide relief options.",
+          "Apply a warm compress or heating pad to your lower abdomen for 15–20 minutes — heat relaxes uterine muscles and is as effective as some over-the-counter pain relievers for mild to moderate cramping.",
+          "Try Cat-Cow yoga stretches or a Supine Pelvic Tilt (lie on your back, gently press your lower back against the floor, hold 5 seconds, repeat 10–15 times) to release deep pelvic tension.",
+          "A gentle 15–20 minute walk improves pelvic circulation and naturally lowers the prostaglandin levels responsible for menstrual cramping — more effective than remaining completely still.",
+          "Include anti-inflammatory foods in the days before and during your period: ginger tea, turmeric, and omega-3 rich foods (salmon, walnuts, chia seeds, flaxseed) can reduce prostaglandin activity over time.",
+          "If pain consistently rates 7 or above or disrupts daily activities, a healthcare provider can explore targeted options including hormonal support, physiotherapy, or dysmenorrhoea management.",
         ],
       });
     }
 
-    // 7. PMS mood swings (>= 3 PMS-mood days in the 7 days before last period)
-    if (pms_mood_swings_count >= 3) {
+    // 7. Early menstrual cramps pattern (pain_level ≥ 6 on cycle days 1–2, recurring across both recent cycles)
+    if (early_menstrual_cramps_detected) {
+      suggestions.push({
+        id:       "early_menstrual_cramps",
+        icon:     "🏃",
+        category: "Movement & Relief",
+        severity: "monitor",
+        title:    "Moderate to severe cramps in the first days of your cycle",
+        message:
+          "You logged moderate to severe cramps during the first two days of your cycle. This is a recurring pattern — targeted movement and gentle exercise are among the most effective, evidence-backed ways to ease it.",
+        actions: [
+          "Child's Pose (Balasana): Kneel and fold forward, resting your forehead on the ground for 60–90 seconds. This stretch gently releases lower back and pelvic muscle tension at the source of day-1 cramping.",
+          "Supine Pelvic Tilt: Lie on your back with knees bent. Flatten your lower back gently against the floor, hold for 5 seconds, and release. Repeat 10–15 times to relieve deep pelvic tension.",
+          "A gentle 15–20 minute walk increases pelvic circulation and naturally lowers the prostaglandin levels that cause uterine contractions — significantly more effective than staying in bed.",
+          "Anti-inflammatory nutrition: ginger tea, turmeric, and omega-3 rich foods (salmon, walnuts, chia seeds) consumed in the 2–3 days before your period can reduce prostaglandin activity and ease day-1 severity.",
+          "Avoid intense cardio on your heaviest flow days — swap it for light yoga, stretching, or walking, which actively support your body rather than adding additional stress to it.",
+          "If cramps consistently rate 7 or above or significantly disrupt daily life, a healthcare provider can discuss targeted management options including dysmenorrhoea treatment.",
+        ],
+      });
+    }
+
+    // 8. PMS pattern — cross-cycle recurring insight (or single-cycle fallback)
+    if (pms_detected) {
+      const symptomList = pms_recurring_symptoms.slice(0, 2).join(" and ");
+      const daysStr     = pms_avg_days_before != null
+        ? `${pms_avg_days_before} day${pms_avg_days_before !== 1 ? "s" : ""}`
+        : "a few days";
+      suggestions.push({
+        id:       "pms_pattern",
+        icon:     "🧘",
+        category: "Mood & Wellbeing",
+        severity: "info",
+        title:    `You frequently report ${pms_dominant_symptom} ${daysStr} before your period`,
+        message:
+          `Across ${pms_cycles_affected} of your recent cycle${pms_cycles_affected !== 1 ? "s" : ""}, ` +
+          `you logged ${symptomList} in the days leading up to your period. ` +
+          `This is a recurring PMS pattern — knowing when to expect it helps you prepare.`,
+        actions: [
+          `In the ${daysStr} before your period, reduce caffeine and add gentle movement to ease ${pms_dominant_symptom}.`,
+          "Track mood and energy daily so you can anticipate how you will feel each cycle.",
+          "Magnesium and vitamin B6 have evidence-based support for reducing PMS symptoms, including mood shifts and fatigue.",
+          "If symptoms significantly disrupt your daily routine, a healthcare provider can discuss personalised management options.",
+        ],
+      });
+    } else if (pms_mood_swings_count >= 3) {
+      // Single-cycle fallback: not enough cross-cycle data yet but current window shows signals
       suggestions.push({
         id:       "pms_mood_swings",
+        icon:     "💭",
+        category: "Mood & Wellbeing",
         severity: "info",
-        title:    "PMS mood patterns observed",
+        title:    "PMS mood patterns observed this cycle",
         message:
-          "You have logged moods like irritability, anxiety, or sadness in the days leading up to your last period. This is a very common PMS pattern and can be managed well.",
+          "You logged mood shifts like irritability, fatigue, or sadness in the days before your period. This is a very common premenstrual pattern.",
         actions: [
-          "Light exercise or a short walk in the days before your period may ease mood shifts.",
+          "Light exercise or a short walk on pre-period days may ease mood shifts.",
           "Journaling or a 5-minute breathing exercise can help during emotionally heavy days.",
-          "Tracking this pattern over time helps you anticipate and prepare ahead.",
+          "Log more cycles to confirm whether this is a recurring PMS pattern.",
         ],
       });
     }
 
-    // 8. Stress spikes before period (>= 2 high-stress days in observation window)
+    // 9. Stress spikes before period (>= 2 high-stress days in observation window)
     if (high_stress_days >= 2) {
       suggestions.push({
         id:       "stress_spikes",
+        icon:     "🌬️",
+        category: "Stress & Wellbeing",
         severity: "info",
         title:    "Elevated stress logged near your cycle",
         message:
-          "High stress levels were recorded on multiple days during your recent cycle window. Stress can sometimes influence cycle timing and how you feel overall.",
+          "High stress levels were recorded on multiple days during your recent cycle window. Elevated cortisol can directly influence cycle timing, hormone balance, and how intensely you experience symptoms.",
         actions: [
-          "Try a short daily wind-down routine — even 10 minutes can make a difference.",
-          "Reduce screen exposure at least 30 minutes before bedtime.",
-          "Notice if stress peaks align with cycle changes — tracking this connection is insightful.",
+          "Box breathing provides fast relief: inhale for 4 seconds, hold for 4, exhale for 4, hold for 4. Repeat 4 cycles. This activates the parasympathetic nervous system and measurably lowers cortisol within minutes.",
+          "Spend at least 10 minutes outdoors during daylight hours each day. Natural light regulates your cortisol rhythm and anchors the sleep-wake cycle that directly influences hormonal balance.",
+          "Notice whether stress tends to peak at a specific phase of your cycle. Luteal-phase stress (1–2 weeks before your period) is especially common and, once identified, can be anticipated and managed.",
+          "Regular moderate exercise — three brisk 30-minute walks a week — is one of the most evidence-supported long-term stress regulators, with measurable effects on cortisol and cycle regularity.",
+          "Reduce screen exposure 30–60 minutes before bedtime to support cortisol decline and improve the quality of sleep that underpins healthy hormonal balance.",
+        ],
+      });
+    }
+
+    // 10. PCOS awareness — surfaces when 2+ independent PCOS-related signals are detected
+    if (pcos_awareness_flag) {
+      const indicatorLabels = {
+        irregular_cycles: "irregular cycle pattern",
+        long_cycles:      "long cycle intervals (>35 days)",
+        missed_cycles:    "missed or very long cycle gaps",
+        acne_pattern:     "recurring acne symptom logging",
+        ml_assessment:    `PCOS ML assessment (${pcos_ml_risk_level} risk)`,
+      };
+      const detectedList = pcos_indicator_details
+        .map((k) => indicatorLabels[k] || k)
+        .join("; ");
+
+      suggestions.push({
+        id:       "pcos_awareness",
+        icon:     "🔬",
+        category: "Hormonal Health",
+        severity: "monitor",
+        title:    "Your cycle patterns may warrant PCOS awareness",
+        message:  pcos_awareness_message,
+        subtext:  `Signals detected: ${detectedList}.`,
+        actions: [
+          "PCOS is one of the most common hormonal conditions — affecting about 1 in 10 women — yet many go undiagnosed for years. Awareness is the first step.",
+          "OvaCare's PCOS Risk Assessment uses a trained ML model to provide a personalised risk estimate based on your symptoms and lifestyle.",
+          "A gynaecologist or endocrinologist can confirm or rule out PCOS through hormone blood tests (LH, FSH, testosterone, AMH) and a pelvic ultrasound.",
+          "Tracking your cycle length, flow, and symptoms consistently over the coming months builds a clearer clinical picture for any future consultation.",
+          "Lifestyle factors such as regular moderate exercise, a low-GI diet, and reducing refined sugar can support hormonal balance regardless of a PCOS diagnosis.",
         ],
       });
     }
@@ -869,10 +1220,27 @@ export const getCycleAnalytics = async (req, res) => {
       cycle_insight_message,
       // log-derived signal counts (useful for debugging / frontend)
       heavy_flow_count,
+      heavy_flow_days_latest,
       high_pain_days,
       high_stress_days,
       pms_mood_swings_count,
+      pms_detected,
+      pms_dominant_symptom,
+      pms_avg_days_before,
+      pms_recurring_symptoms,
+      pms_cycles_affected,
       suggestions,
+      // Pain analytics per cycle
+      pain_days_per_cycle,
+      avg_pain_per_cycle,
+      early_menstrual_cramps_detected,
+      // PCOS risk awareness
+      pcos_awareness_flag,
+      pcos_indicator_count,
+      pcos_indicator_details,
+      pcos_awareness_message,
+      pcos_ml_risk_level,
+      pcos_ml_report_id,
     });
   } catch (err) {
     console.error("[GET CYCLE ANALYTICS]", err.message);
