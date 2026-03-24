@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python / ML Service
+ml_service/venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Python env files
+.env

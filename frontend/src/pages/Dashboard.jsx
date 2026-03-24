@@ -396,6 +396,61 @@ export default function Dashboard() {
           })()}
         </motion.div>
 
+        {/* ── PCOS Awareness ── */}
+        {cycleAnalytics?.pcos_awareness_flag && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.33 }}
+            className="mt-5"
+          >
+            <div
+              className="p-5 rounded-2xl flex items-start gap-4 cursor-pointer"
+              style={{ background: "linear-gradient(135deg,#faf5ff,#ede9fe)", border: "1px solid #c4b5fd", boxShadow: "0 4px 20px rgba(124,58,237,0.10)" }}
+              onClick={() => navigate("/assessment")}
+            >
+              <div
+                className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: "rgba(124,58,237,0.12)" }}
+              >
+                🔬
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <p className="text-sm font-bold" style={{ color: "#5b21b6", margin: 0 }}>PCOS Pattern Detected</p>
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(124,58,237,0.12)", color: "#6d28d9" }}
+                  >
+                    {cycleAnalytics.pcos_indicator_count} indicator{cycleAnalytics.pcos_indicator_count !== 1 ? "s" : ""}
+                  </span>
+                  {cycleAnalytics.pcos_ml_risk_level && (
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      style={{
+                        background: cycleAnalytics.pcos_ml_risk_level === "High" ? "#fee2e2" : cycleAnalytics.pcos_ml_risk_level === "Moderate" ? "#fef3c7" : "#f0fdf4",
+                        color:      cycleAnalytics.pcos_ml_risk_level === "High" ? "#991b1b" : cycleAnalytics.pcos_ml_risk_level === "Moderate" ? "#92400e" : "#166534",
+                      }}
+                    >
+                      ML: {cycleAnalytics.pcos_ml_risk_level}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs leading-relaxed mt-0.5" style={{ color: "#6d28d9" }}>
+                  {cycleAnalytics.pcos_awareness_message}
+                </p>
+                <p className="text-[11px] mt-2 font-semibold" style={{ color: "#7c3aed" }}>
+                  Tap to take the PCOS Risk Assessment →
+                </p>
+              </div>
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs shrink-0"
+                style={{ background: "rgba(124,58,237,0.12)", color: "#7c3aed" }}
+              >›</div>
+            </div>
+          </motion.div>
+        )}
+
         {/* ── Recommended ── */}
         <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="mt-5">
           <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "var(--text-muted)" }}>

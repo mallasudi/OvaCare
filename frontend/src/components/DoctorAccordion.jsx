@@ -44,7 +44,7 @@ export const CATEGORIES = ["Gynecologist", "Endocrinologist", "Dermatologist", "
   doctors: RAW_DOCTORS.filter((d) => d.category === cat),
 }));
 
-export function buildEmailBody(user, latestReport, doctorName, doctorType) {
+export function buildEmailBody(user, latestReport, doctorName, doctorType, cycleReportText = null) {
   let body = `Hello ${doctorName},\n\nI would like to schedule a consultation regarding PCOS.\n\n`;
 
   body += `Patient Name: ${user.name}\n`;
@@ -60,14 +60,20 @@ export function buildEmailBody(user, latestReport, doctorName, doctorType) {
 
   body += `\nSpecialist Type: ${doctorType}\n`;
   body += `\nPlease let me know your availability.\n\nThank you!`;
+
+  if (cycleReportText) {
+    body += `\n\n${'─'.repeat(52)}\n`;
+    body += cycleReportText;
+  }
+
   return body;
 }
 
-function DoctorCard({ doctor, user, latestReport, globalIndex, onRequireAuth }) {
+function DoctorCard({ doctor, user, latestReport, cycleReportText, globalIndex, onRequireAuth }) {
   const emailValid = isValidEmail(doctor.email);
 
   const subject = `OvaCare Consultation Request – ${doctor.category}`;
-  const body = user ? buildEmailBody(user, latestReport, doctor.name, doctor.category) : "";
+  const body = user ? buildEmailBody(user, latestReport, doctor.name, doctor.category, cycleReportText) : "";
 
   const handleMailto = () => {
     if (!user) { onRequireAuth(); return; }
@@ -160,11 +166,12 @@ function DoctorCard({ doctor, user, latestReport, globalIndex, onRequireAuth }) 
 /**
  * DoctorAccordion
  * Props:
- *   user         – auth user object (or null for public view)
- *   latestReport – latest PCOS report object (or null)
- *   onRequireAuth – called when unauthenticated user clicks a contact button
+ *   user            – auth user object (or null for public view)
+ *   latestReport    – latest PCOS report object (or null)
+ *   cycleReportText – optional plain-text cycle health report to include in emails
+ *   onRequireAuth   – called when unauthenticated user clicks a contact button
  */
-export default function DoctorAccordion({ user, latestReport, onRequireAuth }) {
+export default function DoctorAccordion({ user, latestReport, cycleReportText, onRequireAuth }) {
   const [openCategory, setOpenCategory] = useState(null);
 
   const toggleCategory = (type) =>
@@ -253,6 +260,7 @@ export default function DoctorAccordion({ user, latestReport, onRequireAuth }) {
                           doctor={doctor}
                           user={user}
                           latestReport={latestReport}
+                          cycleReportText={cycleReportText}
                           globalIndex={dIdx}
                           onRequireAuth={onRequireAuth}
                         />
