@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
+﻿import { useState, useCallback, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import ReactQuill from "react-quill-new";
 import API from "../utils/api";
 import { getCyclePhase } from "../utils/cyclePhase";
-import { getInsight }   from "../utils/insightEngine";
 import "react-quill-new/dist/quill.snow.css";
 import { motion, AnimatePresence } from "framer-motion";
 import BottomNav from "../components/BottomNav";
@@ -44,6 +44,54 @@ const QUILL_FORMATS = [
   "color", "background", "align",
   "list", "blockquote", "link",
 ];
+
+// ─── Phase-aware rotating prompts (5 per phase, seed by day-of-year) ──────────
+const PHASE_PROMPTS = {
+  Menstrual:  [
+    "What does your body need today? What can you gently let go of?",
+    "How are you honouring your need for rest right now?",
+    "What emotions surfaced today that deserve space?",
+    "What would feel like true self-care in this moment?",
+    "Is there anything you're carrying that you can release today?",
+  ],
+  Follicular: [
+    "What are you most excited to start or explore this week?",
+    "What feels fresh and possible right now?",
+    "How is your rising energy inspiring you today?",
+    "What new goal or idea has been calling your attention?",
+    "Who do you want to grow into in this next season?",
+  ],
+  Ovulation:  [
+    "Who do you want to show up as today?",
+    "What conversation have you been putting off?",
+    "How are you channelling your peak energy?",
+    "What connection or collaboration would light you up right now?",
+    "What bold move are you finally ready to make?",
+  ],
+  Luteal:     [
+    "What boundaries do you need right now?",
+    "Are you feeling more emotionally sensitive than usual?",
+    "What does your inner voice most need to express?",
+    "What worries are asking to be acknowledged — and then released?",
+    "How can you be gentler with yourself today?",
+  ],
+};
+
+// ─── Journal mode definitions ─────────────────────────────────────────────────
+const JOURNAL_MODES = [
+  { key: "free",      label: "Free Write", emoji: "✍️",  color: "var(--primary)",  bg: "rgba(197,124,138,0.10)" },
+  { key: "guided",    label: "Guided",     emoji: "🧭",  color: "#7c3aed",          bg: "rgba(124,58,237,0.10)"  },
+  { key: "gratitude", label: "Gratitude",  emoji: "🙏",  color: "#059669",          bg: "rgba(5,150,105,0.10)"   },
+  { key: "vent",      label: "Vent",       emoji: "🌪️", color: "#e11d48",          bg: "rgba(225,29,72,0.10)"   },
+];
+
+// ─── Reflection type → visual tokens ─────────────────────────────────────────
+const REFLECTION_STYLES = {
+  positive: { color: "#15803d", bg: "rgba(220,252,231,0.55)", border: "rgba(74,222,128,0.4)"  },
+  warning:  { color: "#b45309", bg: "rgba(254,243,199,0.55)", border: "rgba(251,191,36,0.4)"  },
+  info:     { color: "#1d4ed8", bg: "rgba(219,234,254,0.55)", border: "rgba(96,165,250,0.4)"  },
+  neutral:  { color: "#7c3aed", bg: "rgba(243,232,255,0.55)", border: "rgba(192,132,252,0.4)" },
+};
 
 function todayLabel() {
   return new Date().toLocaleDateString("en-US", {
@@ -137,6 +185,197 @@ function SectionLabel({ icon, children }) {
   );
 }
 
+// ─── Typewriter animation component ──────────────────────────────────────────
+function TypewriterText({ text, startDelay = 350, speed = 16, style, className }) {
+  const [displayed, setDisplayed] = useState("");
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    setDisplayed("");
+    setDone(false);
+    if (!text) return;
+    let cancelled = false;
+    const delayTimer = setTimeout(() => {
+      if (cancelled) return;
+      let i = 0;
+      const tick = setInterval(() => {
+        if (cancelled) { clearInterval(tick); return; }
+        i++;
+        setDisplayed(text.slice(0, i));
+        if (i >= text.length) { clearInterval(tick); if (!cancelled) setDone(true); }
+      }, speed);
+    }, startDelay);
+    return () => { cancelled = true; clearTimeout(delayTimer); };
+  }, [text, startDelay, speed]);
+
+  return (
+    <span className={className} style={style}>
+      {displayed}
+      {!done && <span className="tw-cursor" />}
+    </span>
+  );
+}
+
+// ─── Intelligence helpers ───────────────────────────────────────────────────
+/**
+ * Generate a smart, rule-based reflection from the current entry values.
+ * Returns { headline, detail, type } where type is "positive"|"warning"|"info"|"neutral".
+ */
+function generateReflection({ mood, stress, energy, sleep, tags, phase }) {
+  const lowSleep   = sleep < 6;
+  const highStress = stress === "High";
+  const lowEnergy  = energy <= 2;
+  const pcosSyms   = ["#Acne", "#Cravings", "#Bloating", "#Fatigue", "#MoodSwing"];
+  const pcosCount  = tags.filter((t) => pcosSyms.includes(t)).length;
+
+  if (["Happy", "Loved", "Calm"].includes(mood) && energy >= 4 && !highStress)
+    return { headline: "You're thriving today 🌟", type: "positive",
+      detail: "High energy, a positive mood, and low stress — your body and mind are aligned. Recall what helped create this feeling so you can recreate it." };
+
+  if (lowSleep && highStress)
+    return { headline: "Sleep debt is amplifying your stress", type: "warning",
+      detail: "Under 6 hours of sleep causes cortisol to surge, making every stressor feel sharper. Even one early night can meaningfully reset your baseline." };
+
+  if (phase === "Luteal" && ["Sad", "Anxious", "Irritable"].includes(mood))
+    return { headline: "Luteal phase is making emotions louder 🍂", type: "info",
+      detail: "As progesterone peaks and begins to fall, emotional sensitivity spikes — this is hormonal, not a character flaw. Gentle movement and magnesium-rich foods can ease the edge." };
+
+  if (phase === "Menstrual" && lowEnergy)
+    return { headline: "Rest is your priority right now 🌑", type: "info",
+      detail: "Your body is shedding and rebuilding — low energy is expected and valid. Prioritise warmth, iron-rich foods, and minimal obligations today." };
+
+  if (pcosCount >= 3)
+    return { headline: `${pcosCount} PCOS-linked symptoms today 🧬`, type: "warning",
+      detail: "Multiple symptoms associated with hormonal imbalance have appeared. Consider logging this pattern to discuss with your healthcare provider at your next visit." };
+
+  if (highStress && ["Anxious", "Irritable"].includes(mood))
+    return { headline: "Your nervous system needs support", type: "warning",
+      detail: `High stress paired with ${mood.toLowerCase()} mood signals an elevated cortisol state. Box breathing (4s in, 4s hold, 4s out) or a short walk can interrupt the stress loop.` };
+
+  if (lowSleep)
+    return { headline: "Sleep is below your optimal window 😴", type: "info",
+      detail: "Less than 6 hours disrupts cortisol and reproductive hormones alike. Try dimming screens 90 minutes before bed and keeping your room cool tonight." };
+
+  if (lowEnergy && tags.includes("#Fatigue"))
+    return { headline: "Your energy reserves are running low 🔋", type: "info",
+      detail: "Persistent fatigue alongside low energy could signal iron deficiency, thyroid changes, or overextension. If this pattern continues for 3–4 days, consider bloodwork." };
+
+  if (phase === "Follicular" && energy >= 3)
+    return { headline: "Estrogen is rising — use this momentum 🌱", type: "positive",
+      detail: "The follicular phase is your brain's sharpest window for creativity and planning. Tackle complex tasks, set new intentions, or begin something that excites you." };
+
+  if (phase === "Ovulation" && ["Happy", "Loved"].includes(mood))
+    return { headline: "Peak hormonal confidence ✨", type: "positive",
+      detail: "Estrogen and LH are surging — this natural high is real. Channel it into meaningful connections, bold decisions, or the things that matter most to you." };
+
+  return { headline: "Thanks for showing up today 💛", type: "neutral",
+    detail: "Every entry is a small act of self-care. Your patterns over time will reveal insights that no single moment can show." };
+}
+
+/**
+ * Compute analytics from an array of journal entries.
+ * Returns { moodCounts, avgStress, avgEnergy, topSymptoms }.
+ */
+export function getJournalInsights(entries) {
+  if (!entries?.length) return { moodCounts: {}, avgStress: 0, avgEnergy: 0, topSymptoms: [] };
+  const moodCounts = {};
+  let stressSum = 0, energySum = 0, stressN = 0, energyN = 0;
+  const symMap = {};
+  entries.forEach((e) => {
+    if (e.mood) moodCounts[e.mood] = (moodCounts[e.mood] || 0) + 1;
+    if (e.stress_level) { stressSum += e.stress_level === "High" ? 3 : e.stress_level === "Medium" ? 2 : 1; stressN++; }
+    if (e.energy_level) { energySum += e.energy_level; energyN++; }
+    (e.symptoms || []).forEach((s) => { symMap[s] = (symMap[s] || 0) + 1; });
+  });
+  const topSymptoms = Object.entries(symMap).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([tag]) => tag);
+  return {
+    moodCounts,
+    avgStress: stressN ? (stressSum / stressN).toFixed(1) : 0,
+    avgEnergy: energyN ? (energySum / energyN).toFixed(1) : 0,
+    topSymptoms,
+  };
+}
+
+/**
+ * Calculate the current consecutive-day journaling streak.
+ */
+function calculateStreak(entries) {
+  if (!entries?.length) return 0;
+  const MS_DAY = 86400000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const uniqueDates = [...new Set(
+    entries.map((e) => {
+      const d = new Date(e.created_at || e.date); d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    })
+  )].sort((a, b) => b - a);
+  if (!uniqueDates.length) return 0;
+  if (today.getTime() - uniqueDates[0] > MS_DAY) return 0;
+  let streak = 1;
+  for (let i = 1; i < uniqueDates.length; i++) {
+    if (uniqueDates[i - 1] - uniqueDates[i] === MS_DAY) streak++;
+    else break;
+  }
+  return streak;
+}
+
+/**
+ * Detect mood and PCOS symptom patterns across recent entries.
+ * @param {{ mood: string, tags: string[], recentEntries: object[] }}
+ * @returns {{ moodPattern: string|null, symptomsPattern: string|null }}
+ */
+export function detectPatterns({ mood, tags, recentEntries }) {
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+
+  // — Mood pattern: find the most recent past entry with the same mood —
+  let moodPattern = null;
+  if (mood && recentEntries.length) {
+    const prev = recentEntries.find((e) => {
+      if (e.mood !== mood) return false;
+      const d = new Date(e.created_at || e.date); d.setHours(0, 0, 0, 0);
+      return d.getTime() !== today0.getTime();
+    });
+    if (prev) {
+      const daysAgo = Math.round(
+        (Date.now() - new Date(prev.created_at || prev.date).getTime()) / 86400000
+      );
+      moodPattern = daysAgo === 1
+        ? `💡 You also felt ${mood.toLowerCase()} yesterday.`
+        : `💡 Last time you felt ${mood.toLowerCase()} was ${daysAgo} day${daysAgo !== 1 ? "s" : ""} ago.`;
+    }
+  }
+
+  // — Symptom pattern: PCOS-linked tags repeated in the past 7 days —
+  let symptomsPattern = null;
+  const pcosSyms = ["#Acne", "#Cravings", "#Bloating", "#Fatigue", "#MoodSwing"];
+  const selected = tags.filter((t) => pcosSyms.includes(t));
+  if (selected.length >= 2) {
+    const recent7 = recentEntries.filter(
+      (e) => Date.now() - new Date(e.created_at || e.date).getTime() < 7 * 86400000
+    );
+    const repeated = selected.filter((sym) =>
+      recent7.some((e) => (e.symptoms || []).includes(sym))
+    );
+    if (repeated.length >= 2) {
+      symptomsPattern = `${repeated.length} PCOS-related symptoms (${repeated.map((s) => s.replace("#", "")).join(", ")}) repeated this week — consider bringing this pattern to your next consultation.`;
+    }
+  }
+
+  return { moodPattern, symptomsPattern };
+}
+
+/**
+ * Alias for getJournalInsights scoped to last 7 days.
+ * Returns { moodCounts, avgStress, avgEnergy, topSymptoms, totalEntries }.
+ */
+export function getWeeklyInsights(entries) {
+  const week = (entries || []).filter(
+    (e) => Date.now() - new Date(e.created_at || e.date).getTime() < 7 * 86400000
+  );
+  const base = getJournalInsights(week);
+  return { ...base, totalEntries: week.length };
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function HealthJournal() {
   const [content, setContent] = useState("");
@@ -145,13 +384,19 @@ export default function HealthJournal() {
   const [pain,    setPain]    = useState(0);
   const [energy,  setEnergy]  = useState(3);
   const [stress,  setStress]  = useState("Low");
+  const [water,   setWater]   = useState(6);
+  const [sleepHours, setSleepHours] = useState(7);
   const [win,        setWin]        = useState("");
   const [saved,      setSaved]      = useState(false);
+  const [savedMsg,   setSavedMsg]   = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [saveError,  setSaveError]  = useState("");
   const [cycleDay,   setCycleDay]   = useState(null);
-  const [insight,    setInsight]    = useState(null);
-  const [tagInsights, setTagInsights] = useState(null); // { period_days, total_log_days, insights[] }
+  const [isEditing,    setIsEditing]    = useState(false);
+  const [journalMode,   setJournalMode]   = useState("free");
+  const [reflection,    setReflection]    = useState(null);
+  const [recentEntries, setRecentEntries] = useState([]);
+  const navigate = useNavigate();
 
   // Derive cycle day from the active (or most recent) cycle
   useEffect(() => {
@@ -170,10 +415,31 @@ export default function HealthJournal() {
         }
       })
       .catch(() => {}); // silently ignore — phase card handles null gracefully
+  }, [])
 
-    // Fetch last-30-days symptom frequency
-    API.get("/daily-logs/insights")
-      .then(({ data }) => setTagInsights(data))
+  // Load today's journal entry on mount to pre-populate the form
+  useEffect(() => {
+    API.get("/journal/today")
+      .then(({ data }) => {
+        const log = data.log;
+        if (!log) return;
+        setContent(log.notes || "");
+        setMood(log.mood || "");
+        setStress(log.stress_level || "Low");
+        setEnergy(log.energy_level ?? 3);
+        setPain(log.pain_level ?? 0);
+        setSleepHours(log.sleep_hours ?? 7);
+        setWater(log.water_intake ?? 6);
+        setTags(Array.isArray(log.symptoms) ? log.symptoms : []);
+        setIsEditing(true);
+      })
+      .catch(() => {}); // silently ignore — form stays at defaults
+  }, [])
+
+  // Fetch recent entries for streak + pattern + PCOS intelligence
+  useEffect(() => {
+    API.get("/daily-logs/history?limit=30&page=1")
+      .then(({ data }) => setRecentEntries(data.logs || []))
       .catch(() => {});
   }, []);
 
@@ -202,44 +468,25 @@ export default function HealthJournal() {
         .filter(Boolean)
         .join("\n");
 
-      // Use ISO date string (YYYY-MM-DD) to avoid timezone drift on the backend
-      const today = new Date();
-      const date = today.getFullYear() + "-" +
-        String(today.getMonth() + 1).padStart(2, "0") + "-" +
-        String(today.getDate()).padStart(2, "0");
-
-      await API.post("/daily-logs", {
-        date,
-        mood,
-        symptoms:     tags,
-        energy_level: energy,
-        pain_level:   pain,
-        stress_level: stress,
+      const { data } = await API.post("/journal", {
         notes,
-      });
-
-      // Compute insight from the snapshot BEFORE resetting form state
-      const phaseInfo = getCyclePhase(cycleDay);
-      const generatedInsight = getInsight({
-        phase:    phaseInfo ? phaseInfo.phase : null,
         mood,
-        symptoms: tags,
-        pain,
-        energy,
         stress,
+        energy,
+        sleep: sleepHours,
+        water,
+        tags,
       });
-      setInsight(generatedInsight);
 
-      // Reset form
-      setContent("");
-      setTags([]);
-      setMood("");
-      setPain(0);
-      setEnergy(3);
-      setStress("Low");
-      setWin("");
+      const wasEditing = isEditing;
+      setIsEditing(true);
+      setSavedMsg(wasEditing ? "Updated successfully ✨" : "Saved successfully 💖");
       setSaved(true);
       setTimeout(() => setSaved(false), 3500);
+      setReflection(generateReflection({
+        mood, stress, energy, sleep: sleepHours, tags,
+        phase: getCyclePhase(cycleDay)?.phase || null,
+      }));
     } catch (err) {
       const msg = err?.response?.data?.message || "Failed to save entry. Please try again.";
       setSaveError(msg);
@@ -250,6 +497,31 @@ export default function HealthJournal() {
   };
 
   const energyLabels = ["", "Drained", "Low", "Okay", "Good", "Energised"];
+
+  // ── Computed intelligence ─────────────────────────────────────────────
+  const streakData = useMemo(() => {
+    const streak = calculateStreak(recentEntries);
+    const thisWeek = recentEntries.filter(
+      (e) => Date.now() - new Date(e.created_at || e.date).getTime() < 7 * 86400000
+    ).length;
+    return { streak, thisWeek };
+  }, [recentEntries]);
+
+  const dynamicPrompt = useMemo(() => {
+    const phase = getCyclePhase(cycleDay);
+    if (!phase) return null;
+    const prompts = PHASE_PROMPTS[phase.phase] || [];
+    if (!prompts.length) return phase.prompt;
+    const dayOfYear = Math.floor(
+      (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
+    );
+    return prompts[dayOfYear % prompts.length];
+  }, [cycleDay]);
+
+  const { moodPattern: patternInsight, symptomsPattern: pcosAlert } = useMemo(
+    () => detectPatterns({ mood, tags, recentEntries }),
+    [mood, tags, recentEntries]
+  );
 
   return (
     <div className="min-h-screen pb-32" style={{ background: "var(--bg-main)" }}>
@@ -344,6 +616,47 @@ export default function HealthJournal() {
                   </div>
                 );
               })()}
+              {/* Streak badge */}
+              {streakData.streak >= 2 && (
+                <div
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold"
+                  style={{
+                    background: "rgba(255,178,0,0.15)",
+                    color: "#b45309",
+                    border: "1.5px solid rgba(255,178,0,0.35)",
+                    backdropFilter: "blur(8px)",
+                  }}
+                >
+                  🔥 {streakData.streak} Day Streak
+                </div>
+              )}
+              {streakData.streak === 1 && (
+                <div
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold"
+                  style={{
+                    background: "rgba(197,124,138,0.12)",
+                    color: "var(--accent)",
+                    border: "1.5px solid var(--border-color)",
+                    backdropFilter: "blur(8px)",
+                  }}
+                >
+                  ✨ Day 1 — keep it up!
+                </div>
+              )}
+              {/* View History button */}
+              <button
+                onClick={() => navigate("/journal/history")}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all duration-150"
+                style={{
+                  background: "rgba(255,255,255,0.6)",
+                  color: "var(--accent)",
+                  border: "1.5px solid var(--border-color)",
+                  backdropFilter: "blur(8px)",
+                  boxShadow: "0 2px 10px rgba(115,44,63,0.09)",
+                }}
+              >
+                📚 View History
+              </button>
             </motion.div>
           </div>
         </div>
@@ -396,7 +709,7 @@ export default function HealthJournal() {
                       >
                         <span className="text-base mt-0.5">💭</span>
                         <p className="text-sm italic font-semibold" style={{ color: phase.color, lineHeight: 1.6 }}>
-                          &ldquo;{phase.prompt}&rdquo;
+                          &ldquo;{dynamicPrompt || phase.prompt}&rdquo;
                         </p>
                       </div>
                     </>
@@ -420,6 +733,86 @@ export default function HealthJournal() {
             {/* ── Editor Card ───────────────────────────────────────────── */}
             <Card delay={0.08} accentColor="var(--primary)">
               <SectionLabel icon="✍️">What&apos;s on your mind?</SectionLabel>
+
+              {/* ── Journal Mode Selector ──────────────────────────────── */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {JOURNAL_MODES.map(({ key, label, emoji, color, bg }) => {
+                  const active = journalMode === key;
+                  return (
+                    <motion.button
+                      key={key}
+                      whileHover={{ scale: 1.04 }}
+                      whileTap={{ scale: 0.93 }}
+                      onClick={() => setJournalMode(key)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-extrabold transition-all duration-150"
+                      style={{
+                        background: active ? bg : "var(--bg-main)",
+                        color: active ? color : "var(--text-muted)",
+                        border: `1.5px solid ${active ? color + "55" : "var(--border-color)"}`,
+                        boxShadow: active ? `0 2px 10px ${color}25` : "none",
+                      }}
+                    >
+                      <span>{emoji}</span>
+                      <span>{label}</span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              {/* ── Mode-specific prompts + pattern insight ────────────── */}
+              <AnimatePresence>
+                {journalMode === "guided" && dynamicPrompt && (
+                  <motion.div
+                    key="guided-prompt"
+                    initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                    className="flex items-start gap-3 px-4 py-3.5 rounded-2xl mb-4"
+                    style={{ background: "rgba(124,58,237,0.07)", border: "1px solid rgba(124,58,237,0.2)" }}
+                  >
+                    <span style={{ fontSize: 18, marginTop: 1 }}>🧭</span>
+                    <p className="text-sm font-semibold italic" style={{ color: "#7c3aed", lineHeight: 1.65 }}>
+                      {dynamicPrompt}
+                    </p>
+                  </motion.div>
+                )}
+                {journalMode === "gratitude" && (
+                  <motion.div
+                    key="gratitude-prompt"
+                    initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                    className="px-4 py-3.5 rounded-2xl mb-4 space-y-1.5"
+                    style={{ background: "rgba(5,150,105,0.07)", border: "1px solid rgba(5,150,105,0.2)" }}
+                  >
+                    <p className="text-xs font-extrabold uppercase tracking-wider mb-2" style={{ color: "#059669" }}>🙏 Gratitude Prompts</p>
+                    {["Three things I'm grateful for today:", "One person who made my day better:", "One thing my body did for me today:"].map((p, i) => (
+                      <p key={i} className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>• {p}</p>
+                    ))}
+                  </motion.div>
+                )}
+                {journalMode === "vent" && (
+                  <motion.div
+                    key="vent-prompt"
+                    initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-4"
+                    style={{ background: "rgba(225,29,72,0.06)", border: "1px solid rgba(225,29,72,0.2)" }}
+                  >
+                    <span style={{ fontSize: 18 }}>🌪️</span>
+                    <p className="text-xs font-semibold" style={{ color: "#e11d48" }}>
+                      Vent freely — this is your safe, private space. No filters, no judgment.
+                    </p>
+                  </motion.div>
+                )}
+                {patternInsight && journalMode === "free" && (
+                  <motion.div
+                    key="pattern-insight"
+                    initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl mb-4"
+                    style={{ background: "rgba(197,124,138,0.07)", border: "1px solid var(--border-color)" }}
+                  >
+                    <span style={{ fontSize: 15 }}>🔍</span>
+                    <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>{patternInsight}</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div className="quill-journal-wrapper">
                 <ReactQuill
                   theme="snow"
@@ -427,7 +820,7 @@ export default function HealthJournal() {
                   onChange={setContent}
                   modules={QUILL_MODULES}
                   formats={QUILL_FORMATS}
-                  placeholder="Start writing — even a single sentence counts…"
+                  placeholder="Start writing… even one sentence is enough."
                 />
               </div>
               <div
@@ -563,6 +956,28 @@ export default function HealthJournal() {
               </AnimatePresence>
             </Card>
 
+            {/* ── PCOS Intelligence Alert ───────────────────────────── */}
+            <AnimatePresence>
+              {pcosAlert && (
+                <motion.div
+                  key="pcos-alert"
+                  initial={{ opacity: 0, y: 10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
+                  className="rounded-3xl px-5 py-4 mb-5 flex items-start gap-3.5"
+                  style={{
+                    background: "rgba(245,124,0,0.07)",
+                    border: "1.5px solid rgba(245,124,0,0.25)",
+                    boxShadow: "0 2px 12px rgba(245,124,0,0.08)",
+                  }}
+                >
+                  <span style={{ fontSize: 22, marginTop: 1 }}>🧬</span>
+                  <div>
+                    <p className="text-sm font-extrabold mb-1" style={{ color: "#b45309" }}>Possible hormonal pattern detected</p>
+                    <p className="text-xs font-medium" style={{ color: "var(--text-muted)", lineHeight: 1.6 }}>{pcosAlert}</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* ── Save Button ───────────────────────────────────────────── */}
             <motion.div
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -607,7 +1022,7 @@ export default function HealthJournal() {
                     <span>Saving entry…</span>
                   </>
                 ) : (
-                  <span>💾 Save Today&apos;s Entry</span>
+                  <span>{isEditing ? "✏️ Update Today's Entry" : "💾 Save Today's Entry"}</span>
                 )}
               </motion.button>
 
@@ -620,12 +1035,7 @@ export default function HealthJournal() {
                     style={{ background: "rgba(5,150,105,0.09)", border: "1.5px solid rgba(5,150,105,0.2)" }}
                   >
                     <span style={{ fontSize: 24 }}>✅</span>
-                    <div>
-                      <p className="text-sm font-extrabold" style={{ color: "#059669" }}>Entry saved!</p>
-                      <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                        Your journal entry has been recorded for today.
-                      </p>
-                    </div>
+                    <p className="text-sm font-extrabold" style={{ color: "#059669" }}>{savedMsg}</p>
                   </motion.div>
                 )}
                 {saveError && (
@@ -645,43 +1055,53 @@ export default function HealthJournal() {
               </AnimatePresence>
             </motion.div>
 
-            {/* ── Post-save Insight ─────────────────────────────────────── */}
+            {/* ── Smart Reflection Card ─────────────────────────────────── */}
             <AnimatePresence>
-              {insight && (
-                <motion.div
-                  key="insight-card"
-                  initial={{ opacity: 0, y: 16, scale: 0.97 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.97 }}
-                  transition={{ type: "spring", stiffness: 280, damping: 26 }}
-                  className="mb-5 rounded-3xl p-5 overflow-hidden"
-                  style={{
-                    background: insight.bg,
-                    border: `1.5px solid ${insight.border}`,
-                    boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
-                  }}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span style={{ fontSize: 20 }}>💡</span>
-                      <span className="text-xs font-extrabold uppercase tracking-widest" style={{ color: insight.color }}>
-                        Insight
-                      </span>
+              {reflection && (() => {
+                const st = REFLECTION_STYLES[reflection.type] ?? REFLECTION_STYLES.neutral;
+                return (
+                  <motion.div
+                    key="reflection-card"
+                    initial={{ opacity: 0, y: 14, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                    transition={{ type: "spring", stiffness: 280, damping: 26 }}
+                    className="rounded-3xl mb-5 overflow-hidden"
+                    style={{
+                      background: st.bg,
+                      border: `1.5px solid ${st.border}`,
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
+                    }}
+                  >
+                    <div style={{ height: 4, background: st.color, opacity: 0.6 }} />
+                    <div className="p-6">
+                      <div className="flex items-center gap-2.5 mb-3">
+                        <div
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm flex-shrink-0"
+                          style={{ background: st.color + "22", border: `1px solid ${st.border}` }}
+                        >✨</div>
+                        <span className="text-sm font-extrabold uppercase tracking-widest" style={{ color: st.color }}>
+                          Smart Reflection
+                        </span>
+                        <div className="flex-1 h-px" style={{ background: `linear-gradient(90deg,${st.border},transparent)` }} />
+                        <button
+                          onClick={() => setReflection(null)}
+                          className="text-xs rounded-full px-2 py-0.5"
+                          style={{ color: st.color, background: st.color + "15", border: `1px solid ${st.border}` }}
+                        >✕</button>
+                      </div>
+                      <p className="text-sm font-extrabold mb-2" style={{ color: st.color }}>{reflection.headline}</p>
+                      <TypewriterText
+                        text={reflection.detail}
+                        className="text-sm font-medium"
+                        style={{ color: "var(--text-muted)", lineHeight: 1.7, display: "block" }}
+                      />
                     </div>
-                    <motion.button
-                      whileTap={{ scale: 0.88 }}
-                      onClick={() => setInsight(null)}
-                      className="text-xs px-2.5 py-1 rounded-full font-semibold"
-                      style={{ background: "rgba(255,255,255,0.6)", color: "var(--text-muted)", border: "1px solid var(--border-color)" }}
-                    >✕ Dismiss</motion.button>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <span style={{ fontSize: 26, lineHeight: 1 }}>{insight.emoji}</span>
-                    <p className="text-sm" style={{ color: "var(--text-main)", lineHeight: 1.7 }}>{insight.text}</p>
-                  </div>
-                </motion.div>
-              )}
+                  </motion.div>
+                );
+              })()}
             </AnimatePresence>
+
           </div>
 
           {/* ── RIGHT SIDEBAR COLUMN ──────────────────────────────────── */}
@@ -746,6 +1166,32 @@ export default function HealthJournal() {
                   })}
                 </div>
               </div>
+
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-sm font-bold" style={{ color: "var(--text-main)" }}>💧 Water Intake</p>
+                  <span
+                    className="text-xs px-2.5 py-1 rounded-full font-extrabold"
+                    style={{ background: "rgba(59,130,246,0.10)", color: "#3b82f6", border: "1px solid rgba(59,130,246,0.2)" }}
+                  >
+                    {water} / 8 glasses
+                  </span>
+                </div>
+                <SliderInput value={water} min={0} max={12} onChange={setWater} leftLabel="0" rightLabel="12 gl" color="#3b82f6" />
+              </div>
+
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="text-sm font-bold" style={{ color: "var(--text-main)" }}>😴 Sleep</p>
+                  <span
+                    className="text-xs px-2.5 py-1 rounded-full font-extrabold"
+                    style={{ background: "rgba(139,92,246,0.10)", color: "#8b5cf6", border: "1px solid rgba(139,92,246,0.2)" }}
+                  >
+                    {sleepHours}h
+                  </span>
+                </div>
+                <SliderInput value={sleepHours} min={0} max={12} onChange={setSleepHours} leftLabel="0h" rightLabel="12h" color="#8b5cf6" />
+              </div>
             </Card>
 
             {/* One Small Win */}
@@ -780,87 +1226,94 @@ export default function HealthJournal() {
               )}
             </Card>
 
-            {/* ── 30-day Tag Insights */}
-            {tagInsights && (
-              <motion.div
-                initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.28, type: "spring", stiffness: 280, damping: 26 }}
-                className="rounded-3xl overflow-hidden"
-                style={{
-                  background: "var(--card-bg)",
-                  border: "1.5px solid var(--border-color)",
-                  boxShadow: "0 2px 20px rgba(115,44,63,0.06)",
-                }}
-              >
-                <div style={{ height: 4, background: "linear-gradient(90deg,var(--primary),var(--accent)55)" }} />
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-1">
-                    <SectionLabel icon="📈">30-Day Insights</SectionLabel>
-                  </div>
-                  <p className="text-xs mb-4 -mt-2 font-medium" style={{ color: "var(--text-muted)" }}>
-                    Logged {tagInsights.total_log_days} of 30 days
-                  </p>
-
-                  {tagInsights.insights.length === 0 ? (
-                    <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>
-                      No symptoms logged yet. Start tagging to see patterns.
-                    </p>
-                  ) : (() => {
-                    const maxCount = tagInsights.insights[0].count;
-                    const TAG_META = {
-                      "#Fatigue":   { emoji: "😓", color: "#C57C8A" },
-                      "#Cravings":  { emoji: "🍫", color: "#db2777" },
-                      "#Acne":      { emoji: "😣", color: "#ea580c" },
-                      "#MoodSwing": { emoji: "🌊", color: "#7c3aed" },
-                      "#Bloating":  { emoji: "💨", color: "#0891b2" },
-                      "#Headache":  { emoji: "🤯", color: "#732C3F" },
-                    };
-                    return (
-                      <div className="space-y-3.5">
-                        {tagInsights.insights.map(({ symptom, count }) => {
-                          const meta = TAG_META[symptom] ?? { emoji: "🔹", color: "var(--primary)" };
-                          const pct  = Math.round((count / maxCount) * 100);
-                          const label = symptom.replace(/^#/, "");
+            {/* ── Weekly Insights card ──────────────────────────────── */}
+            {(() => {
+              const wi = getWeeklyInsights(recentEntries);
+              const topMood = Object.entries(wi.moodCounts).sort((a, b) => b[1] - a[1])[0];
+              const topMoodEmoji = topMood ? (MOODS.find((m) => m.label === topMood[0])?.emoji || "😶") : null;
+              return (
+                <Card delay={0.28} accentColor="#7c3aed">
+                  <SectionLabel icon="📈">This Week</SectionLabel>
+                  {wi.totalEntries === 0 ? (
+                    <div className="text-center py-4">
+                      <p style={{ fontSize: 30 }}>📓</p>
+                      <p className="text-sm font-semibold mt-2" style={{ color: "var(--text-muted)" }}>
+                        No entries this week yet.
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Start today — your future self will thank you.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Stat row: total entries */}
+                      <div className="flex items-center justify-between py-1.5 px-3 rounded-xl" style={{ background: "rgba(124,58,237,0.07)" }}>
+                        <span className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>📖 Entries logged</span>
+                        <span className="text-sm font-extrabold" style={{ color: "#7c3aed" }}>{wi.totalEntries} / 7</span>
+                      </div>
+                      {/* Dot calendar – days of the week */}
+                      <div className="flex gap-1.5 justify-between">
+                        {["M","T","W","T","F","S","S"].map((d, i) => {
+                          const mapDay = [1,2,3,4,5,6,0]; // Mon=1 in our offset
+                          const today = new Date().getDay();
+                          const filled = recentEntries.some((e) => {
+                            const wd = new Date(e.created_at || e.date).getDay();
+                            return wd === mapDay[i] && Date.now() - new Date(e.created_at || e.date).getTime() < 7*86400000;
+                          });
+                          const isToday = today === mapDay[i];
                           return (
-                            <div key={symptom}>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs font-bold" style={{ color: "var(--text-main)" }}>
-                                  {meta.emoji} {label}
-                                </span>
-                                <span
-                                  className="text-xs font-extrabold px-2 py-0.5 rounded-full"
-                                  style={{ background: `${meta.color}15`, color: meta.color, border: `1px solid ${meta.color}28` }}
-                                >
-                                  {count}d
-                                </span>
-                              </div>
-                              <div className="w-full rounded-full overflow-hidden" style={{ height: 8, background: "var(--bg-main)" }}>
-                                <motion.div
-                                  className="h-full rounded-full"
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${pct}%` }}
-                                  transition={{ duration: 0.7, ease: "easeOut" }}
-                                  style={{ background: `linear-gradient(90deg,${meta.color}88,${meta.color})` }}
-                                />
-                              </div>
+                            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                              <span className="text-xs font-bold" style={{ color: isToday ? "#7c3aed" : "var(--text-muted)" }}>{d}</span>
+                              <div
+                                className="rounded-full"
+                                style={{
+                                  width: 20, height: 20,
+                                  background: filled ? "#7c3aed" : "var(--bg-main)",
+                                  border: `2px solid ${isToday ? "#7c3aed" : "var(--border-color)"}`,
+                                }}
+                              />
                             </div>
                           );
                         })}
-                        <p className="text-xs italic mt-4 pt-3 font-medium"
-                          style={{ color: "var(--text-muted)", borderTop: "1px solid var(--border-color)" }}
-                        >
-                          💡 Included in your doctor report.
-                        </p>
                       </div>
-                    );
-                  })()}
-                </div>
-              </motion.div>
-            )}
+                      {topMood && (
+                        <div className="flex items-center justify-between py-1.5 px-3 rounded-xl" style={{ background: "rgba(197,124,138,0.07)" }}>
+                          <span className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>{topMoodEmoji} Top Mood</span>
+                          <span className="text-xs font-extrabold" style={{ color: "var(--accent)" }}>{topMood[0]} ×{topMood[1]}</span>
+                        </div>
+                      )}
+                      {wi.topSymptoms.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>🏥 Top Symptoms</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {wi.topSymptoms.map((sym) => (
+                              <span
+                                key={sym}
+                                className="text-xs px-2.5 py-1 rounded-full font-semibold"
+                                style={{ background: "rgba(124,58,237,0.10)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.2)" }}
+                              >{sym}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {streakData.streak >= 2 && (
+                        <div
+                          className="mt-1 px-3.5 py-2.5 rounded-2xl text-center"
+                          style={{ background: "rgba(255,178,0,0.10)", border: "1px solid rgba(255,178,0,0.3)" }}
+                        >
+                          <p className="text-xs font-extrabold" style={{ color: "#b45309" }}>🔥 {streakData.streak}-day streak!</p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>You&apos;ve shown up for yourself 💛</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              );
+            })()}
           </div>
           {/* end right sidebar */}
 
         </div>{/* end grid */}
+
+
       </div>{/* end max-w container */}
 
       <BottomNav />
@@ -940,6 +1393,22 @@ export default function HealthJournal() {
         input[type=range]::-webkit-slider-runnable-track { height:1px; background:transparent; }
         input[type=range]::-moz-range-thumb { width:1px; height:1px; border:none; background:transparent; }
         input[type=range]::-moz-range-track { height:1px; background:transparent; }
+
+        /* Typewriter cursor */
+        .tw-cursor {
+          display: inline-block;
+          width: 2px;
+          height: 1em;
+          background: currentColor;
+          margin-left: 2px;
+          vertical-align: text-bottom;
+          border-radius: 1px;
+          animation: tw-blink 0.75s steps(1) infinite;
+        }
+        @keyframes tw-blink {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0; }
+        }
       `}</style>
     </div>
   );
