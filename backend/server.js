@@ -6,7 +6,7 @@ import cors from "cors";
 import userRoutes from "./routes/userRoutes.js";
 import pcosRoutes from "./routes/pcosRoutes.js";
 import cycleRoutes from "./routes/cycleRoutes.js";
-import dailyLogRoutes from "./routes/dailyLogRoutes.js";
+import dailyLogRoutes, { journalRouter } from "./routes/dailyLogRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -26,6 +26,7 @@ app.use("/api/user", userRoutes);
 app.use("/api/pcos", pcosRoutes);
 app.use("/api/cycles", cycleRoutes);
 app.use("/api/daily-logs", dailyLogRoutes);
+app.use("/api/journal",    journalRouter);
 
 app.get("/", (req, res) => {
   res.send("OvaCare Backend Running");

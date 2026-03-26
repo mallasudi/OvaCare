@@ -49,6 +49,18 @@ const dailyLogSchema = new mongoose.Schema(
       type: Boolean,
       default: null,
     },
+    water_intake: {
+      type: Number,
+      min: 0,
+      max: 20,
+      default: null,
+    },
+    sleep_hours: {
+      type: Number,
+      min: 0,
+      max: 24,
+      default: null,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
