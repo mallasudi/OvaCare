@@ -2,6 +2,7 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "./context/AuthContext";
 import HealthJournal from "./pages/HealthJournal";
+import JournalHistoryPage from "./pages/JournalHistoryPage";
 import PeriodTracker from "./pages/PeriodTracker";
 import Consultation from "./pages/Consultation";
 import DashboardConsult from "./pages/DashboardConsult";
@@ -62,6 +63,7 @@ function AppContent() {
         </Route>
         <Route path="/check" element={<PrivateRoute><DashboardAssessment /></PrivateRoute>} />
         <Route path="/journal" element={<PrivateRoute><HealthJournal /></PrivateRoute>} />
+        <Route path="/journal/history" element={<PrivateRoute><JournalHistoryPage /></PrivateRoute>} />
         <Route path="/period" element={<PrivateRoute><PeriodTracker /></PrivateRoute>} />
         <Route path="/consultation" element={<PrivateRoute><Consultation /></PrivateRoute>} />
         <Route path="/report" element={<PrivateRoute><PCOSReport /></PrivateRoute>} />
