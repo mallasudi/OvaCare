@@ -125,7 +125,7 @@ export default function JournalHistoryPage() {
 
   const [allEntries,      setAllEntries]      = useState([]);
   const [currentPage,     setCurrentPage]     = useState(1);
-  const [expandedEntries, setExpandedEntries] = useState(new Set());
+  const [selectedEntry,   setSelectedEntry]   = useState(null);
   const [loading,         setLoading]         = useState(false);
   const [fetchError,      setFetchError]      = useState("");
   const [tagInsights,     setTagInsights]     = useState(null);
@@ -179,7 +179,7 @@ export default function JournalHistoryPage() {
       if (moodFilter && log.mood !== moodFilter) return false;
       if (selectedTags.length) {
         const logTags = log.symptoms ?? [];
-        if (!selectedTags.some((t) => logTags.includes(t))) return false;
+        if (!selectedTags.every((t) => logTags.includes(t))) return false;
       }
       return true;
     });
@@ -191,15 +191,6 @@ export default function JournalHistoryPage() {
     const start = (currentPage - 1) * PAGE_SIZE;
     return filteredEntries.slice(start, start + PAGE_SIZE);
   }, [filteredEntries, currentPage]);
-
-  const toggleExpand = (id) => {
-    const key = String(id);
-    setExpandedEntries((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  };
 
   const toggleTag = (label) =>
     setSelectedTags((prev) =>
@@ -581,43 +572,23 @@ export default function JournalHistoryPage() {
                         </div>
                       )}
 
-                      {/* Row 4: Notes — preview with Read More toggle */}
+                      {/* Row 4: Notes preview */}
                       {(() => {
-                        const raw      = stripHtml(log.notes || "");
-                        const entryId  = String(log._id);
-                        const isExpanded = expandedEntries.has(entryId);
-                        const isLong   = raw.length > 120;
-                        const displayText = raw
-                          ? (isExpanded || !isLong ? raw : raw.slice(0, 120) + "…")
-                          : null;
+                        const raw = stripHtml(log.notes || "");
+                        const preview = raw ? (raw.length > 120 ? raw.slice(0, 120) + "…" : raw) : null;
                         return (
                           <div className="flex-1">
                             <p
                               className="text-sm leading-relaxed"
                               style={{
-                                color: displayText ? "var(--text-main)" : "var(--text-muted)",
-                                fontStyle: displayText ? "normal" : "italic",
-                                whiteSpace: isExpanded ? "pre-wrap" : "normal",
+                                color: preview ? "var(--text-main)" : "var(--text-muted)",
+                                fontStyle: preview ? "normal" : "italic",
                                 wordBreak: "break-word",
                                 overflowWrap: "break-word",
                               }}
                             >
-                              {displayText || "No notes written."}
+                              {preview || "No notes written."}
                             </p>
-                            {isLong && (
-                              <button
-                                onClick={() => toggleExpand(entryId)}
-                                className="mt-2 text-xs font-bold px-2.5 py-1 rounded-full"
-                                style={{
-                                  color: "var(--primary)",
-                                  background: "rgba(197,124,138,0.10)",
-                                  border: "1px solid rgba(197,124,138,0.25)",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                {isExpanded ? "Show Less ▲" : "Read More ▼"}
-                              </button>
-                            )}
                           </div>
                         );
                       })()}
@@ -665,6 +636,22 @@ export default function JournalHistoryPage() {
                           <span className="font-medium">{suggestion}</span>
                         </div>
                       )}
+
+                      {/* Row 7: View Full Entry */}
+                      <div className="mt-auto pt-1">
+                        <button
+                          onClick={() => setSelectedEntry(log)}
+                          className="w-full py-2 rounded-xl text-xs font-bold transition-all duration-150"
+                          style={{
+                            background: "linear-gradient(135deg,var(--primary),var(--accent))",
+                            color: "#fff",
+                            border: "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          View Full Entry →
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 );
@@ -715,9 +702,172 @@ export default function JournalHistoryPage() {
 
       </div>
 
+      {/* ── Entry Detail Modal ──────────────────────────────────────────── */}
+      <AnimatePresence>
+        {selectedEntry && (
+          <motion.div
+            key="modal-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSelectedEntry(null)}
+            style={{
+              position: "fixed", inset: 0,
+              background: "rgba(0,0,0,0.45)",
+              backdropFilter: "blur(4px)",
+              zIndex: 50,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "1rem",
+            }}
+          >
+            <motion.div
+              key="modal-panel"
+              initial={{ opacity: 0, scale: 0.95, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 16 }}
+              transition={{ type: "spring", stiffness: 340, damping: 30 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl"
+              style={{
+                background: "var(--card-bg)",
+                border: "1.5px solid var(--border-color)",
+                boxShadow: "0 20px 60px rgba(115,44,63,0.2)",
+              }}
+            >
+              {/* Close */}
+              <button
+                onClick={() => setSelectedEntry(null)}
+                style={{
+                  position: "absolute", top: 14, right: 14,
+                  width: 32, height: 32, borderRadius: "50%",
+                  background: "rgba(115,44,63,0.1)",
+                  border: "1.5px solid rgba(115,44,63,0.2)",
+                  color: "var(--accent)",
+                  cursor: "pointer", fontSize: 16,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  zIndex: 1,
+                }}
+              >✕</button>
+
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4" style={{ borderBottom: "1.5px solid var(--border-color)" }}>
+                <p className="text-xs font-extrabold uppercase tracking-widest mb-2" style={{ color: "var(--primary)" }}>
+                  🗓 {formatDate(selectedEntry.date)}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {MOOD_MAP[selectedEntry.mood] && (
+                    <span
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"
+                      style={{
+                        background: "linear-gradient(135deg,rgba(197,124,138,0.15),rgba(115,44,63,0.08))",
+                        color: "var(--accent)",
+                        border: "1px solid var(--border-color)",
+                      }}
+                    >
+                      {MOOD_MAP[selectedEntry.mood].emoji} {MOOD_MAP[selectedEntry.mood].label}
+                    </span>
+                  )}
+                  {selectedEntry.symptoms?.map((sym) => {
+                    const meta = TAG_MAP[sym];
+                    return (
+                      <span
+                        key={sym}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
+                        style={{
+                          background: "rgba(197,124,138,0.1)",
+                          color: "var(--accent)",
+                          border: "1px solid rgba(197,124,138,0.2)",
+                        }}
+                      >
+                        {meta?.emoji ?? "🔹"} {sym.replace(/^#/, "")}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Rich-text journal content */}
+              <div className="px-6 py-5">
+                {selectedEntry.notes ? (
+                  <div
+                    className="journal-html-content text-sm leading-relaxed"
+                    style={{ color: "var(--text-main)" }}
+                    dangerouslySetInnerHTML={{ __html: selectedEntry.notes }}
+                  />
+                ) : (
+                  <p className="text-sm italic" style={{ color: "var(--text-muted)" }}>No notes written.</p>
+                )}
+              </div>
+
+              {/* Win section */}
+              {selectedEntry.win && (
+                <div
+                  className="mx-6 mb-5 flex items-start gap-3 px-4 py-3 rounded-2xl"
+                  style={{
+                    background: "linear-gradient(135deg,rgba(5,150,105,0.07),rgba(16,185,129,0.04))",
+                    border: "1.5px solid rgba(5,150,105,0.2)",
+                  }}
+                >
+                  <span style={{ fontSize: 18, flexShrink: 0 }}>🌟</span>
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-widest mb-0.5" style={{ color: "#059669" }}>
+                      One Small Win
+                    </p>
+                    <p className="text-sm font-medium" style={{ color: "var(--text-main)" }}>
+                      {selectedEntry.win}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Stats row */}
+              {(selectedEntry.energy_level != null || selectedEntry.stress_level || selectedEntry.sleep_hours != null) && (
+                <div className="mx-6 mb-6 grid grid-cols-3 gap-3">
+                  {selectedEntry.energy_level != null && (
+                    <div className="flex flex-col items-center p-3 rounded-2xl" style={{ background: "var(--bg-main)", border: "1.5px solid var(--border-color)" }}>
+                      <span style={{ fontSize: 18 }}>⚡</span>
+                      <p className="text-xs font-bold mt-1" style={{ color: "var(--text-muted)" }}>Energy</p>
+                      <p className="text-sm font-extrabold" style={{ color: "var(--accent)" }}>{selectedEntry.energy_level}/5</p>
+                    </div>
+                  )}
+                  {selectedEntry.stress_level && (
+                    <div className="flex flex-col items-center p-3 rounded-2xl" style={{ background: "var(--bg-main)", border: "1.5px solid var(--border-color)" }}>
+                      <span style={{ fontSize: 18 }}>🧘</span>
+                      <p className="text-xs font-bold mt-1" style={{ color: "var(--text-muted)" }}>Stress</p>
+                      <p className="text-sm font-extrabold" style={{ color: "var(--accent)" }}>{selectedEntry.stress_level}</p>
+                    </div>
+                  )}
+                  {selectedEntry.sleep_hours != null && (
+                    <div className="flex flex-col items-center p-3 rounded-2xl" style={{ background: "var(--bg-main)", border: "1.5px solid var(--border-color)" }}>
+                      <span style={{ fontSize: 18 }}>💤</span>
+                      <p className="text-xs font-bold mt-1" style={{ color: "var(--text-muted)" }}>Sleep</p>
+                      <p className="text-sm font-extrabold" style={{ color: "var(--accent)" }}>{selectedEntry.sleep_hours}h</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <BottomNav />
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .journal-html-content h1,.journal-html-content h2,.journal-html-content h3 { font-weight:700; margin:0.5em 0 0.25em; }
+        .journal-html-content h1 { font-size:1.25rem; }
+        .journal-html-content h2 { font-size:1.1rem; }
+        .journal-html-content p { margin:0.4em 0; }
+        .journal-html-content ul,.journal-html-content ol { padding-left:1.25em; margin:0.5em 0; }
+        .journal-html-content li { margin:0.25em 0; }
+        .journal-html-content strong { font-weight:700; }
+        .journal-html-content em { font-style:italic; }
+        .journal-html-content blockquote { border-left:3px solid var(--primary); padding-left:0.75em; color:var(--text-muted); margin:0.5em 0; }
+        .journal-html-content a { color:var(--accent); text-decoration:underline; }
+      `}</style>
     </div>
   );
 }

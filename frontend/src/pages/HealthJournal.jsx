@@ -296,24 +296,48 @@ export function getJournalInsights(entries) {
   };
 }
 
+// ─── Date helpers ───────────────────────────────────────────────────────────
+const isSameDay = (d1, d2) =>
+  new Date(d1).toDateString() === new Date(d2).toDateString();
+
+const getWeekEntries = (entries) => {
+  const now = new Date();
+  const firstDay = new Date(now);
+  firstDay.setDate(now.getDate() - now.getDay());
+  firstDay.setHours(0, 0, 0, 0);
+  const lastDay = new Date(firstDay);
+  lastDay.setDate(firstDay.getDate() + 6);
+  lastDay.setHours(23, 59, 59, 999);
+  return (entries || []).filter((entry) => {
+    const date = new Date(entry.date || entry.created_at);
+    return date >= firstDay && date <= lastDay;
+  });
+};
+
 /**
  * Calculate the current consecutive-day journaling streak.
  */
 function calculateStreak(entries) {
   if (!entries?.length) return 0;
   const MS_DAY = 86400000;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const uniqueDates = [...new Set(
-    entries.map((e) => {
-      const d = new Date(e.created_at || e.date); d.setHours(0, 0, 0, 0);
+  // De-duplicate by calendar day, sort newest-first
+  const seen = new Set();
+  const sorted = [...entries]
+    .map((e) => {
+      const d = new Date(e.date || e.created_at);
+      d.setHours(0, 0, 0, 0);
       return d.getTime();
     })
-  )].sort((a, b) => b - a);
-  if (!uniqueDates.length) return 0;
-  if (today.getTime() - uniqueDates[0] > MS_DAY) return 0;
+    .filter((t) => { if (seen.has(t)) return false; seen.add(t); return true; })
+    .sort((a, b) => b - a);
+  if (!sorted.length) return 0;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Streak is broken if the most recent entry isn't today or yesterday
+  if (today.getTime() - sorted[0] > MS_DAY) return 0;
   let streak = 1;
-  for (let i = 1; i < uniqueDates.length; i++) {
-    if (uniqueDates[i - 1] - uniqueDates[i] === MS_DAY) streak++;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const diff = Math.round((sorted[i] - sorted[i + 1]) / MS_DAY);
+    if (diff === 1) streak++;
     else break;
   }
   return streak;
@@ -369,9 +393,7 @@ export function detectPatterns({ mood, tags, recentEntries }) {
  * Returns { moodCounts, avgStress, avgEnergy, topSymptoms, totalEntries }.
  */
 export function getWeeklyInsights(entries) {
-  const week = (entries || []).filter(
-    (e) => Date.now() - new Date(e.created_at || e.date).getTime() < 7 * 86400000
-  );
+  const week = getWeekEntries(entries);
   const base = getJournalInsights(week);
   return { ...base, totalEntries: week.length };
 }
@@ -431,6 +453,7 @@ export default function HealthJournal() {
         setSleepHours(log.sleep_hours ?? 7);
         setWater(log.water_intake ?? 6);
         setTags(Array.isArray(log.symptoms) ? log.symptoms : []);
+        setWin(log.win || "");
         setIsEditing(true);
       })
       .catch(() => {}); // silently ignore — form stays at defaults
@@ -439,7 +462,7 @@ export default function HealthJournal() {
   // Fetch recent entries for streak + pattern + PCOS intelligence
   useEffect(() => {
     API.get("/daily-logs/history?limit=30&page=1")
-      .then(({ data }) => setRecentEntries(data.logs || []))
+      .then(({ data }) => setRecentEntries(data.entries || []))
       .catch(() => {});
   }, []);
 
@@ -460,16 +483,9 @@ export default function HealthJournal() {
     setSaveError("");
     setSubmitting(true);
     try {
-      const plainContent = htmlToPlain(content).trim();
-      const notes = [
-        plainContent,
-        win.trim() ? `Win: ${win.trim()}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
       const { data } = await API.post("/journal", {
-        notes,
+        notes: content,
+        win: win.trim(),
         mood,
         stress,
         energy,
@@ -501,10 +517,10 @@ export default function HealthJournal() {
   // ── Computed intelligence ─────────────────────────────────────────────
   const streakData = useMemo(() => {
     const streak = calculateStreak(recentEntries);
-    const thisWeek = recentEntries.filter(
-      (e) => Date.now() - new Date(e.created_at || e.date).getTime() < 7 * 86400000
-    ).length;
-    return { streak, thisWeek };
+    const weekEntries = getWeekEntries(recentEntries);
+    console.log("All entries:", recentEntries);
+    console.log("Week entries:", weekEntries);
+    return { streak, thisWeek: weekEntries.length };
   }, [recentEntries]);
 
   const dynamicPrompt = useMemo(() => {
@@ -1254,9 +1270,10 @@ export default function HealthJournal() {
                         {["M","T","W","T","F","S","S"].map((d, i) => {
                           const mapDay = [1,2,3,4,5,6,0]; // Mon=1 in our offset
                           const today = new Date().getDay();
-                          const filled = recentEntries.some((e) => {
-                            const wd = new Date(e.created_at || e.date).getDay();
-                            return wd === mapDay[i] && Date.now() - new Date(e.created_at || e.date).getTime() < 7*86400000;
+                          const weekEntries = getWeekEntries(recentEntries);
+                          const filled = weekEntries.some((e) => {
+                            const wd = new Date(e.date || e.created_at).getDay();
+                            return wd === mapDay[i];
                           });
                           const isToday = today === mapDay[i];
                           return (
