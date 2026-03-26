@@ -284,7 +284,7 @@ export const getSymptomInsights = async (req, res) => {
 */
 export const createOrUpdateDailyLog = async (req, res) => {
   try {
-    const { notes, mood, stress, energy, sleep, water, tags } = req.body;
+    const { notes, win, mood, stress, energy, sleep, water, tags } = req.body;
 
     const now = new Date();
     const startOfDay = new Date(now);
@@ -299,6 +299,7 @@ export const createOrUpdateDailyLog = async (req, res) => {
 
     const fields = {
       ...(notes  !== undefined && { notes }),
+      ...(win    !== undefined && { win }),
       ...(mood   !== undefined && { mood }),
       ...(stress !== undefined && { stress_level: stress }),
       ...(energy !== undefined && { energy_level: energy }),

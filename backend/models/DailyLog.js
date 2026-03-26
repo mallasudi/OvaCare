@@ -45,6 +45,10 @@ const dailyLogSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    win: {
+      type: String,
+      default: "",
+    },
     on_period: {
       type: Boolean,
       default: null,
