@@ -6,6 +6,7 @@ import API from "../utils/api";
 import DoctorAccordion from "../components/DoctorAccordion";
 import ProfileDropdown from "../components/ProfileDropdown";
 import CycleDoctorReportModal, { buildCycleReportText } from "../components/CycleDoctorReportModal";
+import ovacareLogoSrc from "../assets/images/OvaCare LOGO.png";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -69,8 +70,7 @@ export default function DashboardConsult() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="pt-7 pb-2 flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight" style={{ color: "var(--primary)" }}>OvaCare 🌸</h1>
-            <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Your PCOS wellness companion</p>
+            <img src={ovacareLogoSrc} alt="OvaCare" className="h-14 w-auto object-contain" style={{ mixBlendMode: "multiply" }} />
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
