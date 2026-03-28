@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
@@ -484,40 +485,60 @@ function MenuItem({ icon, label, onClick, danger }) {
 }
 
 function Modal({ children, onClose, title }) {
-  return (
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.5)" }}
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)", zIndex: 9999 }}
       onClick={onClose}
     >
       <motion.div
-        initial={{ scale: 0.9, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.9, y: 20 }}
+        initial={{ scale: 0.92, y: 24, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.92, y: 24, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 320, damping: 28 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-3xl shadow-2xl p-6"
+        className="w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
         style={{
           background: "var(--card-bg)",
           border: "1px solid var(--border-color)",
         }}
       >
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-xl font-bold" style={{ color: "var(--text-main)" }}>
+        {/* Modal Header */}
+        <div
+          className="flex items-center justify-between px-6 py-4"
+          style={{ borderBottom: "1px solid var(--border-color)" }}
+        >
+          <h3 className="text-lg font-bold" style={{ color: "var(--text-main)" }}>
             {title}
           </h3>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center transition"
-            style={{ background: "var(--bg-main)" }}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition hover:scale-110"
+            style={{
+              background: "color-mix(in srgb, var(--primary) 12%, transparent)",
+              color: "var(--primary)",
+            }}
+            aria-label="Close"
           >
             ✕
           </button>
         </div>
-        {children}
+
+        {/* Modal Body */}
+        <div className="px-6 py-5">
+          {children}
+        </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 }

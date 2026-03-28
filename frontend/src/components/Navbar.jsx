@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { translations } from "../utils/translations";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import ovacareLogoSrc from "../assets/images/OvaCare LOGO.png";
 
 export default function Navbar({ lang = "en", setLang }) {
   const t = translations[lang] || translations.en;
@@ -45,10 +46,11 @@ export default function Navbar({ lang = "en", setLang }) {
         {/* LOGO */}
         <Link
           to="/"
-          className="text-2xl font-bold transition-all duration-300 hover:scale-105 hover:drop-shadow"
-          style={{ color: "var(--primary)" }}
+          className="flex items-center gap-2 transition-all duration-300 hover:scale-105 hover:drop-shadow"
         >
-          OvaCare 🌸
+          <div className="bg-white/70 backdrop-blur-md p-2 rounded-xl shadow-sm">
+            <img src={ovacareLogoSrc} alt="OvaCare" className="h-10 w-auto object-contain" />
+          </div>
         </Link>
 
         {/* NAV LINKS */}
