@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { translations } from "../utils/translations";
 import { useAuth } from "../context/AuthContext";
+import pcosImageSrc from "../assets/images/PCOS.jpg";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -275,15 +276,40 @@ export default function Home({ lang = "en", setLang }) {
 
       {/* ── WHAT IS PCOS ── */}
       <section className="py-24" style={{ background: "var(--bg-secondary)" }}>
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <motion.div variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}>
-            <h2 className="text-4xl font-bold mb-6" style={{ color: "var(--text-main)" }}>
-              {t.home.whatIs}
-            </h2>
-            <p className="text-lg leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              {t.home.whatIsDesc}
-            </p>
-          </motion.div>
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex flex-col md:flex-row items-center gap-10">
+            {/* Left: text */}
+            <motion.div
+              variants={fadeUp}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              className="flex-1"
+            >
+              <h2 className="text-4xl font-bold mb-6" style={{ color: "var(--text-main)" }}>
+                {t.home.whatIs}
+              </h2>
+              <p className="text-lg leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                {t.home.whatIsDesc}
+              </p>
+            </motion.div>
+
+            {/* Right: image */}
+            <motion.div
+              variants={fadeUp}
+              custom={0.2}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              className="flex-1 flex justify-center"
+            >
+              <img
+                src={pcosImageSrc}
+                alt="PCOS illustration"
+                className="w-full max-w-md rounded-xl shadow-md object-contain"
+              />
+            </motion.div>
+          </div>
         </div>
       </section>
 

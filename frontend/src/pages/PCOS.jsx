@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import pcosImage from "../assets/images/Ovary.png";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -37,23 +38,35 @@ export default function PCOS() {
 
       {/* ── HERO ── */}
       <section className="py-20" style={{ background: "var(--bg-secondary)" }}>
-        <div className="max-w-4xl mx-auto px-6">
-          <motion.div variants={fadeUp} initial="hidden" animate="visible" className="space-y-5">
-            <span
-              className="text-xs font-semibold px-3 py-1.5 rounded-full"
-              style={{ background: "var(--primary)", color: "white" }}
-            >
-              🔬 Learn About PCOS
-            </span>
-            <h1 className="text-5xl font-bold leading-tight" style={{ color: "var(--text-main)" }}>
-              What is <span style={{ color: "var(--primary)" }}>PCOS</span>?
-            </h1>
-            <p className="text-lg leading-relaxed max-w-2xl" style={{ color: "var(--text-muted)" }}>
-              Polycystic Ovary Syndrome (PCOS) is a hormonal disorder common among women of
-              reproductive age. It affects how ovaries work and can impact menstruation, fertility,
-              hormones, and overall health.
-            </p>
-          </motion.div>
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="flex flex-col md:flex-row items-center gap-10">
+            {/* Left: Text */}
+            <motion.div variants={fadeUp} initial="hidden" animate="visible" className="flex-1 space-y-5">
+              <span
+                className="text-xs font-semibold px-3 py-1.5 rounded-full"
+                style={{ background: "var(--primary)", color: "white" }}
+              >
+                🔬 Learn About PCOS
+              </span>
+              <h1 className="text-5xl font-bold leading-tight" style={{ color: "var(--text-main)" }}>
+                What is <span style={{ color: "var(--primary)" }}>PCOS</span>?
+              </h1>
+              <p className="text-lg leading-relaxed max-w-2xl" style={{ color: "var(--text-muted)" }}>
+                Polycystic Ovary Syndrome (PCOS) is a hormonal disorder common among women of
+                reproductive age. It affects how ovaries work and can impact menstruation, fertility,
+                hormones, and overall health.
+              </p>
+            </motion.div>
+
+            {/* Right: Image */}
+            <div className="flex-1 flex justify-center">
+              <img
+                src={pcosImage}
+                alt="PCOS Diagram"
+                className="w-full max-w-md rounded-xl shadow-md object-contain"
+              />
+            </div>
+          </div>
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-5 mt-12">
