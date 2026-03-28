@@ -106,7 +106,7 @@ export default function Register() {
       setLoading(false);
     }
   };
-
+//handle register
   const handleRegister = async () => {
     try {
       await API.post("/auth/register", { name, email, password, age: Number(age), contactNumber });
