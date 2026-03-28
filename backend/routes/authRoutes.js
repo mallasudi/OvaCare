@@ -1,11 +1,13 @@
 import express from "express";
-import { register, login, getProfile, updateProfile, changePassword, uploadProfilePicture, verifyToken } from "../controllers/authController.js";
+import { register, login, getProfile, updateProfile, changePassword, uploadProfilePicture, verifyToken, sendOtp, verifyOtp } from "../controllers/authController.js";
 import authMiddleware from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
 router.post("/register", register);
 router.post("/login", login);
+router.post("/send-otp", sendOtp);
+router.post("/verify-otp", verifyOtp);
 
 // Protected routes
 router.get("/verify", authMiddleware, verifyToken);
