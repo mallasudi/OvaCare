@@ -516,11 +516,11 @@ function LogModal({ date, activeCycle, startPeriod = false, onClose, onSaved, sh
                   <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 10 }}>How are you feeling?</p>
                   <div className="grid grid-cols-3 gap-2">
                     {MOODS.map((m) => (
-                      <button key={m.label} onClick={() => setMood(mood === m.emoji ? "" : m.emoji)} title={m.label}
+                      <button key={m.label} onClick={() => setMood(mood === m.label ? "" : m.label)} title={m.label}
                         className="flex flex-col items-center gap-1 rounded-xl cursor-pointer transition-all duration-150"
-                        style={{ padding: "10px 8px", border: "1px solid", background: mood === m.emoji ? "var(--primary)" : "var(--bg-main)", borderColor: mood === m.emoji ? "var(--primary)" : "var(--border-color)" }}>
+                        style={{ padding: "10px 8px", border: "1px solid", background: mood === m.label ? "var(--primary)" : "var(--bg-main)", borderColor: mood === m.label ? "var(--primary)" : "var(--border-color)" }}>
                         <span style={{ fontSize: 22 }}>{m.emoji}</span>
-                        <span style={{ fontSize: 11, fontWeight: 500, color: mood === m.emoji ? "white" : "var(--text-muted)" }}>{m.label}</span>
+                        <span style={{ fontSize: 11, fontWeight: 500, color: mood === m.label ? "white" : "var(--text-muted)" }}>{m.label}</span>
                       </button>
                     ))}
                   </div>
@@ -1172,7 +1172,6 @@ export default function PeriodTracker() {
         tipTitle = periodDay ? `Period · Day ${periodDay}` : "Period day";
         if (log?.flow_intensity) tipLines.push(`Flow: ${log.flow_intensity}`);
         if (log?.pain_level > 0) tipLines.push(`Pain: ${log.pain_level}/10`);
-        if (log?.mood)           tipLines.push(`Mood: ${log.mood}`);
         if (!log)                tipLines.push("Tap to log details");
       } else if (isOvulation) {
         tipTitle = "✨ Ovulation · Peak Fertility";
@@ -1190,8 +1189,7 @@ export default function PeriodTracker() {
       } else if (log) {
         tipTitle = "Log entry";
         if (log.flow_intensity)  tipLines.push(`Flow: ${log.flow_intensity}`);
-        if (log.mood)            tipLines.push(`Mood: ${log.mood}`);
-        if (log.symptoms?.length) tipLines.push(log.symptoms.slice(0, 2).join(", "));
+        if (log.pain_level > 0)  tipLines.push(`Pain: ${log.pain_level}/10`);
         if (!tipLines.length)    tipLines.push("Tap to view entry");
       }
 
@@ -2002,119 +2000,58 @@ export default function PeriodTracker() {
                 </div>
               </motion.div>
 
-              {/* Row 6: Cycle History + Daily Log Entries */}
-              {(cycles.length > 0 || dailyLogs.length > 0) && (
+              {/* Row 6: Cycle History — period records only */}
+              {cycles.length > 0 && (
                 <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
                   className="rounded-2xl overflow-hidden"
                   style={{ background: "var(--card-bg)", border: "1px solid var(--border-color)", boxShadow: "0 2px 20px rgba(0,0,0,0.05)" }}>
                   <div className="p-5 sm:p-6 pb-4" style={{ borderBottom: "1px solid var(--border-color)" }}>
                     <div className="flex items-center justify-between gap-3">
                       <h2 style={{ fontSize: 17, fontWeight: 800, color: "var(--text-main)", margin: 0 }}>Cycle History</h2>
-                      {dailyLogs.length > 0 && (
-                        <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600, background: "color-mix(in srgb, var(--primary) 10%, transparent)", color: "var(--primary)" }}>
-                          {dailyLogs.length} log{dailyLogs.length !== 1 ? "s" : ""} this month
-                        </span>
-                      )}
+                      <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 600, background: "color-mix(in srgb, var(--primary) 10%, transparent)", color: "var(--primary)" }}>
+                        {cycles.length} cycle{cycles.length !== 1 ? "s" : ""}
+                      </span>
                     </div>
                   </div>
-                  <div className="p-5 sm:p-6 flex flex-col gap-6">
-
-                    {/* Period Cycle records */}
-                    {cycles.length > 0 && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>Period Cycles</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {cycles.slice(0, 6).map((cycle, idx) => {
-                            const dur = cycle.period_end
-                              ? Math.max(1, Math.round((new Date(cycle.period_end) - new Date(cycle.period_start)) / 86400000) + 1) + " days"
-                              : "Active";
-                            return (
-                              <div key={cycle._id} className="rounded-xl p-4 flex items-start gap-3"
-                                style={{ background: "var(--bg-main)", border: `1px solid ${cycle.is_active ? "#fecaca" : "var(--border-color)"}` }}>
-                                <div className="rounded-xl flex items-center justify-center shrink-0"
-                                  style={{ width: 38, height: 38, background: idx === 0 ? "var(--primary)" : "var(--border-color)", color: idx === 0 ? "white" : "var(--text-muted)", fontWeight: 800, fontSize: 13 }}>
-                                  {cycles.length - idx}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)", marginBottom: 2 }}>
-                                    {fmt(cycle.period_start, { month: "short", day: "numeric", year: "numeric" })}
-                                  </p>
-                                  <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                                    {cycle.period_end ? `Ended ${fmt(cycle.period_end, { month: "short", day: "numeric" })}` : "Currently active"}
-                                    {" · "}{dur}
-                                  </p>
-                                  {cycle.flow_intensity && (
-                                    <span style={{ display: "inline-block", marginTop: 4, fontSize: 10, fontWeight: 600, padding: "1px 7px", borderRadius: 999, background: "#fff1f2", color: "#be123c", border: "1px solid #fecaca" }}>
-                                      🩸 {cycle.flow_intensity}
-                                    </span>
-                                  )}
-                                </div>
+                  <div className="p-5 sm:p-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {cycles.slice(0, 6).map((cycle, idx) => {
+                        const bleedDays = cycle.period_end
+                          ? Math.max(1, Math.round((new Date(cycle.period_end) - new Date(cycle.period_start)) / 86400000) + 1)
+                          : null;
+                        return (
+                          <div key={cycle._id} className="rounded-xl p-4 flex items-start gap-3"
+                            style={{ background: "var(--bg-main)", border: `1px solid ${cycle.period_end == null ? "#fecaca" : "var(--border-color)"}` }}>
+                            <div className="rounded-xl flex items-center justify-center shrink-0"
+                              style={{ width: 38, height: 38, background: idx === 0 ? "var(--primary)" : "var(--border-color)", color: idx === 0 ? "white" : "var(--text-muted)", fontWeight: 800, fontSize: 13 }}>
+                              {cycles.length - idx}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)", marginBottom: 2 }}>
+                                {fmt(cycle.period_start, { month: "short", day: "numeric", year: "numeric" })}
+                              </p>
+                              <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
+                                {cycle.period_end
+                                  ? `Ended ${fmt(cycle.period_end, { month: "short", day: "numeric" })} · ${bleedDays}d`
+                                  : "Currently active"}
+                              </p>
+                              <div className="flex flex-wrap gap-1">
+                                {cycle.flow_intensity && (
+                                  <span style={{ fontSize: 10, fontWeight: 600, padding: "1px 7px", borderRadius: 999, background: "#fff1f2", color: "#be123c", border: "1px solid #fecaca" }}>
+                                    🩸 {cycle.flow_intensity}
+                                  </span>
+                                )}
+                                {bleedDays && (
+                                  <span style={{ fontSize: 10, fontWeight: 600, padding: "1px 7px", borderRadius: 999, background: "var(--card-bg)", color: "var(--text-muted)", border: "1px solid var(--border-color)" }}>
+                                    {bleedDays}d bleed
+                                  </span>
+                                )}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Daily Log Entries */}
-                    {dailyLogs.length > 0 && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>Recent Log Entries</p>
-                        <div className="flex flex-col gap-2">
-                          {[...dailyLogs]
-                            .sort((a, b) => new Date(b.date) - new Date(a.date))
-                            .slice(0, 5)
-                            .map((log) => {
-                              const isBleedLog = log.on_period === true || FLOW_OPTIONS.includes(log.flow_intensity);
-                              const keySym = (log.symptoms || []).filter((s) =>
-                                ["Cramps", "Fatigue", "Bloating", "Headache", "Back pain"].includes(s)
-                              );
-                              return (
-                                <div key={log._id || log.date} className="rounded-xl p-3 flex items-start gap-3"
-                                  style={{ background: "var(--bg-main)", border: `1px solid ${isBleedLog ? "#fecaca" : "var(--border-color)"}` }}>
-                                  <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15,
-                                    background: isBleedLog ? "#fff1f2" : "color-mix(in srgb, var(--primary) 8%, transparent)",
-                                    border: `1.5px solid ${isBleedLog ? "#fecaca" : "color-mix(in srgb, var(--primary) 20%, transparent)"}` }}>
-                                    {isBleedLog ? "🩸" : (log.mood || "📋")}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-main)" }}>
-                                        {fmt(log.date, { weekday: "short", month: "short", day: "numeric" })}
-                                      </span>
-                                      {log.flow_intensity && (
-                                        <span style={{ fontSize: 11, fontWeight: 600, padding: "1px 8px", borderRadius: 999, background: "#fff1f2", color: "#be123c", border: "1px solid #fecaca" }}>
-                                          🩸 {log.flow_intensity}
-                                        </span>
-                                      )}
-                                      {log.mood && !isBleedLog && <span style={{ fontSize: 15 }}>{log.mood}</span>}
-                                    </div>
-                                    <div className="flex items-center gap-3 flex-wrap">
-                                      {keySym.length > 0 && (
-                                        <div className="flex flex-wrap gap-1">
-                                          {keySym.map((s) => (
-                                            <span key={s} style={{ fontSize: 10, fontWeight: 600, padding: "1px 7px", borderRadius: 999, background: "var(--card-bg)", color: "var(--text-muted)", border: "1px solid var(--border-color)" }}>
-                                              {s}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {log.pain_level > 0 && (
-                                        <span style={{ fontSize: 11, fontWeight: 600,
-                                          color: log.pain_level >= 7 ? "#ef4444" : log.pain_level >= 4 ? "#f59e0b" : "var(--text-muted)" }}>
-                                          Pain {log.pain_level}/10
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          }
-                        </div>
-                      </div>
-                    )}
-
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </motion.div>
               )}
