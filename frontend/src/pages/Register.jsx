@@ -237,7 +237,7 @@ export default function Register() {
             </form>
           )}
 
-          {/* ── STEP 2: OTP VERIFICATION ── */}
+          {/* ── OTP VERIFICATION ── */}
           {step === "otp" && (
             <form className="space-y-5" onSubmit={handleVerifyOtp}>
               <div className="p-4 rounded-xl text-sm" style={{ background: "rgba(176,80,112,0.08)", border: "1px solid rgba(176,80,112,0.2)", color: "var(--primary)" }}>
