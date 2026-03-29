@@ -6,43 +6,37 @@ const fadeUp = {
   visible: (i = 0) => ({ opacity: 1, y: 0, transition: { delay: i * 0.1, duration: 0.4 } }),
 };
 
-const EMAIL_A = "mallasudiksha888@gmail.com";
-const EMAIL_B = "sudi.malla30@gmail.com";
-
 export const isValidEmail = (email) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).toLowerCase());
 
-export const RAW_DOCTORS = [
-  // Gynecologist (indices 0,1,2)
-  { category: "Gynecologist", name: "Dr. Priya Sharma",   hospital: "Apollo Women's Clinic",   location: "Mumbai",    icon: "👩‍⚕️" },
-  { category: "Gynecologist", name: "Dr. Kavita Nair",    hospital: "Fortis Healthcare",        location: "Bangalore", icon: "👩‍⚕️" },
-  { category: "Gynecologist", name: "Dr. Anita Verma",    hospital: "Max Hospital",             location: "Delhi",     icon: "👩‍⚕️" },
-  // Endocrinologist (indices 3,4,5)
-  { category: "Endocrinologist", name: "Dr. Rahul Mehta",  hospital: "AIIMS",                   location: "New Delhi", icon: "🔬" },
-  { category: "Endocrinologist", name: "Dr. Sunita Patel", hospital: "Narayana Health",         location: "Kolkata",   icon: "🔬" },
-  { category: "Endocrinologist", name: "Dr. Deepak Joshi", hospital: "Manipal Hospital",        location: "Pune",      icon: "🔬" },
-  // Dermatologist (indices 6,7,8)
-  { category: "Dermatologist", name: "Dr. Neha Gupta",    hospital: "Skin Wellness Centre",     location: "Hyderabad", icon: "💊" },
-  { category: "Dermatologist", name: "Dr. Aisha Khan",    hospital: "ClearSkin Clinic",         location: "Chennai",   icon: "💊" },
-  { category: "Dermatologist", name: "Dr. Meera Iyer",    hospital: "DermaCare Hospital",       location: "Kochi",     icon: "💊" },
-  // Nutritionist (indices 9,10,11)
-  { category: "Nutritionist",  name: "Dr. Rekha Singh",   hospital: "HealthFirst Nutrition",    location: "Jaipur",    icon: "🥑" },
-  { category: "Nutritionist",  name: "Dr. Pooja Bhatia",  hospital: "NutriLife Clinic",         location: "Ahmedabad", icon: "🥑" },
-  { category: "Nutritionist",  name: "Dr. Sonal Tyagi",   hospital: "WellBeing Wellness",       location: "Lucknow",   icon: "🥑" },
-].map((d, i) => ({ ...d, email: i % 2 === 0 ? EMAIL_A : EMAIL_B }));
-
 const CATEGORY_META = {
-  Gynecologist:   { when: "First choice for menstrual irregularities and hormonal concerns" },
-  Endocrinologist:{ when: "If insulin resistance, diabetes risk, or thyroid issues are suspected" },
-  Dermatologist:  { when: "For acne, excess hair growth, or skin darkening" },
-  Nutritionist:   { when: "For diet planning to manage weight, blood sugar, and inflammation" },
+  Gynecologist:    { when: "First choice for menstrual irregularities and hormonal concerns" },
+  Endocrinologist: { when: "If insulin resistance, diabetes risk, or thyroid issues are suspected" },
+  Dermatologist:   { when: "For acne, excess hair growth, or skin darkening" },
+  Nutritionist:    { when: "For diet planning to manage weight, blood sugar, and inflammation" },
 };
 
-export const CATEGORIES = ["Gynecologist", "Endocrinologist", "Dermatologist", "Nutritionist"].map((cat) => ({
-  type: cat,
-  ...CATEGORY_META[cat],
-  doctors: RAW_DOCTORS.filter((d) => d.category === cat),
-}));
+const SPEC_ICON = {
+  Gynecologist:    "",
+  Endocrinologist: "🔬",
+  Dermatologist:   "💊",
+  Nutritionist:    "🥑",
+};
+const DEFAULT_ICON = "🩺";
+
+function buildCategoriesFromDB(doctors) {
+  const groups = {};
+  doctors.forEach((doc) => {
+    const spec = doc.specialization || "Other";
+    if (!groups[spec]) groups[spec] = [];
+    groups[spec].push({ ...doc, category: spec, icon: SPEC_ICON[spec] || DEFAULT_ICON });
+  });
+  return Object.entries(groups).map(([type, docs]) => ({
+    type,
+    when: CATEGORY_META[type]?.when || `For ${type.toLowerCase()} concerns`,
+    doctors: docs,
+  }));
+}
 
 export function buildEmailBody(user, latestReport, doctorName, doctorType, cycleReportText = null) {
   let body = `Hello ${doctorName},\n\nI would like to schedule a consultation regarding PCOS.\n\n`;
@@ -104,10 +98,12 @@ function DoctorCard({ doctor, user, latestReport, cycleReportText, globalIndex, 
       {/* Top row: icon + doctor info */}
       <div className="flex items-start gap-4 mb-4">
         <div
-          className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+          className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0 overflow-hidden"
           style={{ background: "var(--bg-main)" }}
         >
-          {doctor.icon}
+          {doctor.image
+            ? <img src={doctor.image} alt={doctor.name} className="w-full h-full object-cover" />
+            : doctor.icon}
         </div>
         <div className="flex-1 min-w-0">
           <h4 className="font-bold text-sm" style={{ color: "var(--text-main)" }}>
@@ -170,16 +166,29 @@ function DoctorCard({ doctor, user, latestReport, cycleReportText, globalIndex, 
  *   latestReport    – latest PCOS report object (or null)
  *   cycleReportText – optional plain-text cycle health report to include in emails
  *   onRequireAuth   – called when unauthenticated user clicks a contact button
+ *   doctors         – optional array of doctor objects from the DB; falls back to RAW_DOCTORS if empty
  */
-export default function DoctorAccordion({ user, latestReport, cycleReportText, onRequireAuth }) {
+export default function DoctorAccordion({ user, latestReport, cycleReportText, onRequireAuth, doctors: dbDoctors }) {
   const [openCategory, setOpenCategory] = useState(null);
+
+  const categories = buildCategoriesFromDB(dbDoctors || []);
 
   const toggleCategory = (type) =>
     setOpenCategory((prev) => (prev === type ? null : type));
 
+  if (categories.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-3" style={{ color: "var(--text-muted)" }}>
+        <span className="text-4xl">🩺</span>
+        <p className="text-sm font-semibold">No specialists available yet</p>
+        <p className="text-xs text-center max-w-xs">Doctors will appear here once added by the admin.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
-      {CATEGORIES.map((cat, catIdx) => {
+      {categories.map((cat, catIdx) => {
         const isOpen = openCategory === cat.type;
         return (
           <motion.div
@@ -256,7 +265,7 @@ export default function DoctorAccordion({ user, latestReport, cycleReportText, o
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       {cat.doctors.map((doctor, dIdx) => (
                         <DoctorCard
-                          key={doctor.name}
+                          key={doctor._id || doctor.name}
                           doctor={doctor}
                           user={user}
                           latestReport={latestReport}
