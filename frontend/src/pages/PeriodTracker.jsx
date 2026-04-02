@@ -27,7 +27,7 @@ const DAY_NAMES = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const NAV_ITEMS = [
   { path: "/dashboard",         icon: "🏠", label: "Home"    },
   { path: "/journal",           icon: "📔", label: "Journal" },
-  { path: "/assessment",        icon: "🔍", label: "Check"   },
+  { path: "/dashboard/assessment", icon: "🔍", label: "Check"   },
   { path: "/period",            icon: "🩸", label: "Cycle"   },
   { path: "/dashboard/consult", icon: "💬", label: "Consult" },
 ];
@@ -951,6 +951,7 @@ export default function PeriodTracker() {
   const [confTip,      setConfTip]      = useState(false);
   const [loggingPeriod, setLoggingPeriod] = useState(false);
   const [endingPeriod,  setEndingPeriod]  = useState(false);
+  const [deletingCycle, setDeletingCycle] = useState(null); // holds cycle._id while deleting
   const [toast,        setToast]        = useState(null);
   const [expandedSug,  setExpandedSug]  = useState(null);
   const [showReport,   setShowReport]   = useState(false);
@@ -1094,6 +1095,19 @@ export default function PeriodTracker() {
     } catch (err) {
       showToast(err?.response?.data?.message || "Could not end period. Please try again.");
     } finally { setEndingPeriod(false); }
+  };
+
+  const handleDeleteCycle = async (cycle) => {
+    const label = fmt(cycle.period_start, { month: "short", day: "numeric", year: "numeric" });
+    if (!window.confirm(`Delete the period log starting ${label}? This cannot be undone.`)) return;
+    setDeletingCycle(cycle._id);
+    try {
+      await API.delete(`/cycles/${cycle._id}`);
+      await fetchAll();
+      showToast("Period log deleted.");
+    } catch (err) {
+      showToast(err?.response?.data?.message || "Could not delete. Please try again.");
+    } finally { setDeletingCycle(null); }
   };
 
   const openLogEntryModal = () => {
@@ -1285,17 +1299,16 @@ export default function PeriodTracker() {
   }
 
   return (
-    <div className="flex min-h-screen" style={{ background: "var(--bg-main)" }}>
-      <Sidebar />
-      <main className="flex-1 min-w-0 overflow-y-auto pb-24 lg:pb-12">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 py-7 lg:py-10">
+    <>
+    <div className="min-h-screen pb-24" style={{ background: "var(--bg-main)" }}>
 
-          {/* Header with gradient hero */}
-          <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mb-6">
-            <div className="rounded-2xl p-5 sm:p-6 relative overflow-hidden"
-              style={{ background: "linear-gradient(135deg, var(--primary) 0%, var(--accent) 60%, #9f1239 100%)", boxShadow: "0 8px 32px rgba(197,124,138,0.35)" }}>
-              <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)", backgroundSize: "20px 20px", pointerEvents: "none" }} />
-              <div className="relative flex items-start justify-between gap-4 flex-wrap">
+      {/* Header with gradient hero — full width like Journal */}
+      <motion.div initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+        <div className="w-full relative overflow-hidden"
+          style={{ background: "linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)", boxShadow: "0 8px 32px rgba(197,124,138,0.35)" }}>
+          <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)", backgroundSize: "20px 20px", pointerEvents: "none" }} />
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 py-7 lg:py-10 relative">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <p style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 4 }}>
                     {greeting} · {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
@@ -1323,9 +1336,11 @@ export default function PeriodTracker() {
                 )}
               </div>
             </div>
-          </motion.div>
+          </div>
+      </motion.div>
 
-          {/* Loading */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 py-7 lg:py-10">
+        {/* Loading */}
           {loading && (
             <div className="flex flex-col gap-4">
               {[1,2,3].map((i) => (
@@ -1501,35 +1516,6 @@ export default function PeriodTracker() {
                 phase={phase}
               />
 
-              {/* Row 2: Prediction cards */}
-              {analytics?.predicted_next_period && (
-                <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-                  className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                  <div className="rounded-2xl p-5" style={{ background: "linear-gradient(135deg,#fff1f2,#ffe4e6)", border: "1px solid #fecaca" }}>
-                    <div className="flex items-center gap-2 mb-3"><span style={{ fontSize: 20 }}>🩸</span><p style={{ fontSize: 12, fontWeight: 700, color: "#9f1239" }}>Next Period</p></div>
-                    <p style={{ fontSize: 24, fontWeight: 900, lineHeight: 1, color: "#be123c", marginBottom: 4 }}>{fmt(analytics.predicted_next_period, { month: "short", day: "numeric" })}</p>
-                    <p style={{ fontSize: 12, color: "#e11d48", fontWeight: 500 }}>
-                      {daysToNext === 0 ? "Expected today" : daysToNext != null && daysToNext > 0 ? `In ${daysToNext} day${daysToNext !== 1 ? "s" : ""}` : daysToNext != null ? `${Math.abs(daysToNext)} day${Math.abs(daysToNext) !== 1 ? "s" : ""} late` : "--"}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl p-5" style={{ background: "linear-gradient(135deg,#faf5ff,#ede9fe)", border: "1px solid #ddd6fe" }}>
-                    <div className="flex items-center gap-2 mb-3"><span style={{ fontSize: 20 }}>✨</span><p style={{ fontSize: 12, fontWeight: 700, color: "#5b21b6" }}>Ovulation</p></div>
-                    <p style={{ fontSize: 24, fontWeight: 900, lineHeight: 1, color: "#6d28d9", marginBottom: 4 }}>{fmt(analytics.predicted_ovulation_date, { month: "short", day: "numeric" })}</p>
-                    <p style={{ fontSize: 12, color: "#7c3aed", fontWeight: 500 }}>Estimated date</p>
-                  </div>
-                  <div className="rounded-2xl p-5" style={{ background: "linear-gradient(135deg,#f0fdf4,#dcfce7)", border: "1px solid #a7f3d0" }}>
-                    <div className="flex items-center gap-2 mb-3"><span style={{ fontSize: 20 }}>🌿</span><p style={{ fontSize: 12, fontWeight: 700, color: "#065f46" }}>Fertile Window</p></div>
-                    <p style={{ fontSize: 16, fontWeight: 900, lineHeight: 1.25, color: "#047857", marginBottom: 4 }}>
-                      {fmt(analytics.fertile_window_start, { month: "short", day: "numeric" })} – {fmt(analytics.fertile_window_end, { month: "short", day: "numeric" })}
-                    </p>
-                    <p style={{ fontSize: 12, color: "#10b981", fontWeight: 500 }}>Peak fertility</p>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* Fertility Intelligence Card */}
-              <FertilityIntelligenceCard analytics={analytics} todayStr={todayStr} />
-
               {/* Row 2.5: Late Period • Irregular Cycle • Menstrual Cramps • PCOS Awareness Banners */}
               {((!activeCycle && analytics?.is_delayed) || analytics?.is_irregular || analytics?.early_menstrual_cramps_detected || analytics?.pcos_awareness_flag) && (
                 <motion.div
@@ -1667,7 +1653,7 @@ export default function PeriodTracker() {
                             </li>
                           ))}
                         </ul>
-                        <Link to="/assessment"
+                        <Link to="/dashboard/assessment"
                           style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 12, fontSize: 13, fontWeight: 700, color: "white", background: "linear-gradient(135deg,#7c3aed,#a855f7)", textDecoration: "none", boxShadow: "0 4px 12px rgba(124,58,237,0.28)" }}>
                           🔬 Take PCOS Assessment
                         </Link>
@@ -2048,6 +2034,22 @@ export default function PeriodTracker() {
                                 )}
                               </div>
                             </div>
+                            <button
+                              onClick={() => handleDeleteCycle(cycle)}
+                              disabled={deletingCycle === cycle._id}
+                              title="Delete this period log"
+                              style={{
+                                flexShrink: 0, background: "none", border: "none", cursor: "pointer",
+                                padding: "4px 6px", borderRadius: 8, color: "#f43f5e",
+                                opacity: deletingCycle === cycle._id ? 0.5 : 0.7,
+                                fontSize: 16, lineHeight: 1,
+                                transition: "opacity 0.15s",
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.background = "#fff1f2"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.opacity = deletingCycle === cycle._id ? "0.5" : "0.7"; e.currentTarget.style.background = "none"; }}
+                            >
+                              {deletingCycle === cycle._id ? "…" : "🗑"}
+                            </button>
                           </div>
                         );
                       })}
@@ -2060,11 +2062,10 @@ export default function PeriodTracker() {
           )}
 
         </div>
-      </main>
-      <BottomNav />
+      </div>
 
-      <AnimatePresence>
-        {modal && (
+    <AnimatePresence>
+      {modal && (
           <LogModal
             date={modal.date}
             activeCycle={activeCycle}
@@ -2074,22 +2075,22 @@ export default function PeriodTracker() {
             showToast={showToast}
           />
         )}
-      </AnimatePresence>
+    </AnimatePresence>
 
-      <AnimatePresence>
-        {showReport && analytics && (
-          <CycleDoctorReportModal
-            analytics={analytics}
-            cycles={cycles}
-            dailyLogs={dailyLogs}
-            user={user}
-            onClose={() => setShowReport(false)}
-          />
-        )}
-      </AnimatePresence>
+    <AnimatePresence>
+      {showReport && analytics && (
+        <CycleDoctorReportModal
+          analytics={analytics}
+          cycles={cycles}
+          dailyLogs={dailyLogs}
+          user={user}
+          onClose={() => setShowReport(false)}
+        />
+      )}
+    </AnimatePresence>
 
-      <AnimatePresence>
-        {toast && (
+    <AnimatePresence>
+      {toast && (
           <motion.div key="toast"
             initial={{ opacity: 0, y: 24, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -2099,7 +2100,7 @@ export default function PeriodTracker() {
             {toast}
           </motion.div>
         )}
-      </AnimatePresence>
-    </div>
+    </AnimatePresence>
+    </>
   );
 }

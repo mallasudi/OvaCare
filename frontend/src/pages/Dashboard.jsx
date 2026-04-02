@@ -508,51 +508,66 @@ export default function Dashboard() {
       className="min-h-screen"
       style={{ background: "var(--bg-main)" }}
     >
-      {/* ══ STICKY TOP HEADER ══════════════════════════════════════════ */}
+      {/* ══ HEADER BANNER ════════════════════════════════════════ */}
       <div
-        className="sticky top-0 z-30 px-4 sm:px-6 lg:px-8"
-        style={{ background: "var(--bg-main)", borderBottom: "1px solid var(--border-color)", backdropFilter: "blur(12px)" }}
+        className="w-full relative"
+        style={{ background: "linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)", boxShadow: "0 8px 32px rgba(197,124,138,0.35)" }}
       >
-        <div className="max-w-screen-xl mx-auto flex items-center justify-between h-14">
-          <div className="flex items-center gap-3">
-            <img src={ovacareLogoSrc} alt="OvaCare" className="h-10 w-auto object-contain" style={{ mixBlendMode: "multiply" }} />
-            {phaseMeta && (
-              <span className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full"
-                style={{ background: phaseMeta.bg + "99", color: phaseMeta.color }}>
-                {phaseMeta.label}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden md:block">
-              <p className="text-sm font-semibold" style={{ color: "var(--text-main)" }}>{user?.name}</p>
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
-              </p>
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)", backgroundSize: "20px 20px", pointerEvents: "none" }} />
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="w-full px-6 sm:px-8 relative"
+        >
+          {/* ── Single row: [logo + text] left · user right ── */}
+          <div className="flex items-center justify-between gap-6 py-6">
+            {/* Left: logo vertically centered with welcome text */}
+            <div className="flex items-center gap-5 min-w-0">
+              <img src={ovacareLogoSrc} alt="OvaCare" className="h-14 w-auto object-contain flex-shrink-0" style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.25))" }} />
+              <div className="min-w-0">
+                <h2 className="text-2xl lg:text-3xl font-extrabold leading-snug" style={{ color: "white", letterSpacing: "0.01em" }}>
+                  Welcome back, <span style={{ color: "rgba(255,255,255,0.8)" }}>{user?.name?.split(" ")[0]}</span> 💖
+                </h2>
+                <p className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.7)" }}>Here's your PCOS health overview</p>
+                <div className="flex items-center gap-2 flex-wrap mt-2.5">
+                  {phaseMeta && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+                      style={{ background: "rgba(255,255,255,0.18)", color: "white", border: "1px solid rgba(255,255,255,0.3)", backdropFilter: "blur(8px)" }}>
+                      {phaseMeta.label}
+                    </span>
+                  )}
+                  {streak >= 1 && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+                      style={{ background: "rgba(255,255,255,0.18)", color: "white", border: "1px solid rgba(255,255,255,0.3)", backdropFilter: "blur(8px)" }}>
+                      🔥 {streak}-day streak
+                    </span>
+                  )}
+                  {risk && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+                      style={{ background: "rgba(255,255,255,0.18)", color: "white", border: "1px solid rgba(255,255,255,0.3)", backdropFilter: "blur(8px)" }}>
+                      {riskStyle.icon} {risk} PCOS
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <ProfileDropdown user={user} />
+            {/* Right: user name + date + avatar */}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-semibold" style={{ color: "white" }}>{user?.name}</p>
+                <p className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>
+                  {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+                </p>
+              </div>
+              <ProfileDropdown user={user} />
+            </div>
           </div>
-        </div>
+        </motion.div>
       </div>
 
       {/* ══ PAGE BODY ══════════════════════════════════════════════════ */}
       <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 pt-6">
-
-        {/* ══ GREETING ═════════════════════════════════════════════════ */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl lg:text-2xl font-bold" style={{ color: "var(--text-main)" }}>
-              Welcome back, <span style={{ color: "var(--primary)" }}>{user?.name?.split(" ")[0]}</span> 💖
-            </h2>
-            <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>Here's your PCOS health overview</p>
-          </div>
-          {streak >= 1 && (
-            <div className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold"
-              style={{ background: "rgba(245,158,11,0.12)", color: "#b45309" }}>
-              🔥 {streak}-day streak
-            </div>
-          )}
-        </div>
 
         {/* ══ QUICK INSIGHTS STRIP ═════════════════════════════════════ */}
         {!loading && dashboardData && (
@@ -691,7 +706,7 @@ export default function Dashboard() {
                 </>
               ) : !loading && (
                 <button
-                  onClick={() => navigate("/assessment")}
+                  onClick={() => navigate("/dashboard/assessment")}
                   className="bg-white font-bold px-6 py-2.5 rounded-full text-sm shadow-lg hover:shadow-xl hover:scale-105 transition-all whitespace-nowrap"
                   style={{ color: "var(--accent)" }}
                 >
@@ -707,7 +722,7 @@ export default function Dashboard() {
 
           {/* ── Left: Journal Insights ────────────────────────────────── */}
           <Section
-            title="📓 This Week in Your Journal"
+            title="📓 Weekly Activity"
             subtitle="Logged days, mood frequency, and top symptom"
             accentGrad="linear-gradient(90deg, #ec4899, #f59e0b)"
             badge={`${entriesLogged}/7 days`}
@@ -721,12 +736,10 @@ export default function Dashboard() {
               </p>
             ) : (
               <>
-                {streak >= 1 && (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full mb-3 text-xs font-bold"
-                    style={{ background: "rgba(245,158,11,0.12)", color: "#b45309" }}>
-                    🔥 {streak}-day streak
-                  </div>
-                )}
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full mb-3 text-xs font-bold"
+                  style={{ background: streak >= 1 ? "rgba(245,158,11,0.12)" : "rgba(107,114,128,0.10)", color: streak >= 1 ? "#b45309" : "var(--text-muted)" }}>
+                  {streak >= 1 ? `🔥 Current Streak: ${streak} day${streak > 1 ? "s" : ""}` : "No active streak"}
+                </div>
                 <div className="flex justify-between mb-3">
                   {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((day) => (
                     <div key={day} className="flex flex-col items-center gap-1">

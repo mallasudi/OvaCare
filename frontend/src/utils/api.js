@@ -18,10 +18,18 @@ API.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Intercept 401 responses to trigger logout
+// Intercept 401 responses to trigger logout, and 503 for maintenance
 API.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 503) {
+      // Maintenance mode — store message and redirect
+      localStorage.setItem("maintenanceMessage", error.response?.data?.message || "App is under maintenance.");
+      if (window.location.pathname !== "/maintenance") {
+        window.location.href = "/maintenance";
+      }
+      return Promise.reject(error);
+    }
     if (error.response?.status === 401) {
       console.log("[API] Unauthorized (401) - clearing auth and redirecting to login");
       // Clear all auth data
