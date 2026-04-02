@@ -2,10 +2,12 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./config/db.js";
-import adminAuthRoutes   from "./routes/adminAuthRoutes.js";
-import adminDoctorRoutes from "./routes/adminDoctorRoutes.js";
-import adminUserRoutes   from "./routes/adminUserRoutes.js";
-import adminReportRoutes from "./routes/adminReportRoutes.js";
+import adminAuthRoutes         from "./routes/adminAuthRoutes.js";
+import adminDoctorRoutes       from "./routes/adminDoctorRoutes.js";
+import adminUserRoutes         from "./routes/adminUserRoutes.js";
+import adminReportRoutes       from "./routes/adminReportRoutes.js";
+import adminNotificationRoutes from "./routes/adminNotificationRoutes.js";
+import adminSettingsRoutes     from "./routes/adminSettingsRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -20,10 +22,12 @@ app.use(cors({
 }));
 app.use(express.json());
 
-app.use("/api/admin",         adminAuthRoutes);
-app.use("/api/admin/doctors", adminDoctorRoutes);
-app.use("/api/admin/users",   adminUserRoutes);
-app.use("/api/admin/reports", adminReportRoutes);
+app.use("/api/admin",              adminAuthRoutes);
+app.use("/api/admin/doctors",      adminDoctorRoutes);
+app.use("/api/admin/users",        adminUserRoutes);
+app.use("/api/admin/reports",      adminReportRoutes);
+app.use("/api/admin/notifications", adminNotificationRoutes);
+app.use("/api/admin/settings",     adminSettingsRoutes);
 
 app.get("/", (req, res) => {
   res.send("OvaCare Admin Backend Running");

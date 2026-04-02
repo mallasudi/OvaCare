@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 const NAV_ITEMS = [
   { path: "/dashboard",    icon: "🏠",  label: "Home"    },
   { path: "/journal",      icon: "📔",  label: "Journal" },
-  { path: "/assessment",      icon: "🔍",  label: "Check",  fab: true },
+  { path: "/dashboard/assessment", icon: "🔍",  label: "Check",  fab: true },
   { path: "/period",          icon: "🩸",  label: "Cycle"   },
   { path: "/dashboard/consult", icon: "📩",  label: "Consult" },
 ];

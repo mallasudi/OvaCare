@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
+import API from "../utils/api";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -10,14 +11,14 @@ export const isValidEmail = (email) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).toLowerCase());
 
 const CATEGORY_META = {
-  Gynecologist:    { when: "First choice for menstrual irregularities and hormonal concerns" },
+  Gynecologist:    { when: "For general PCOS management, irregular periods, fertility concerns, or hormonal symptoms" },
   Endocrinologist: { when: "If insulin resistance, diabetes risk, or thyroid issues are suspected" },
   Dermatologist:   { when: "For acne, excess hair growth, or skin darkening" },
   Nutritionist:    { when: "For diet planning to manage weight, blood sugar, and inflammation" },
 };
 
 const SPEC_ICON = {
-  Gynecologist:    "",
+  Gynecologist:    "👩‍⚕️",
   Endocrinologist: "🔬",
   Dermatologist:   "💊",
   Nutritionist:    "🥑",
@@ -38,7 +39,7 @@ function buildCategoriesFromDB(doctors) {
   }));
 }
 
-export function buildEmailBody(user, latestReport, doctorName, doctorType, cycleReportText = null) {
+export function buildEmailBody(user, latestReport, doctorName, doctorType, cycleReportText = null, hasAttachment = false) {
   let body = `Hello ${doctorName},\n\nI would like to schedule a consultation regarding PCOS.\n\n`;
 
   body += `Patient Name: ${user.name}\n`;
@@ -49,7 +50,9 @@ export function buildEmailBody(user, latestReport, doctorName, doctorType, cycle
     if (latestReport._id) {
       body += `Report ID: ${latestReport._id}\n`;
     }
-    body += `\nNote: I can attach the downloaded PDF report from OvaCare for your reference.\n`;
+    if (hasAttachment) {
+      body += `\nNote: I have attached the downloaded PDF report from OvaCare for your reference.\n`;
+    }
   }
 
   body += `\nSpecialist Type: ${doctorType}\n`;
@@ -63,25 +66,38 @@ export function buildEmailBody(user, latestReport, doctorName, doctorType, cycle
   return body;
 }
 
-function DoctorCard({ doctor, user, latestReport, cycleReportText, globalIndex, onRequireAuth }) {
+function DoctorCard({ doctor, user, latestReport, cycleReportText, globalIndex, onRequireAuth, onEmailSent }) {
   const emailValid = isValidEmail(doctor.email);
+  const [sending,    setSending]    = useState(false);
+  const [status,     setStatus]     = useState(null); // { ok: bool, msg: string }
+  const [reportFile, setReportFile] = useState(null); // File | null
 
-  const subject = `OvaCare Consultation Request – ${doctor.category}`;
-  const body = user ? buildEmailBody(user, latestReport, doctor.name, doctor.category, cycleReportText) : "";
-
-  const handleMailto = () => {
+  const handleConsult = async () => {
     if (!user) { onRequireAuth(); return; }
-    window.location.href = `mailto:${doctor.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  };
+    setSending(true);
+    setStatus(null);
+    try {
+      const fd = new FormData();
+      fd.append("doctorEmail", doctor.email);
+      fd.append("doctorName",  doctor.name);
+      fd.append("doctorId",    doctor._id);
+      if (latestReport?._id)         fd.append("reportId",  latestReport._id);
+      if (latestReport?.risk_level)  fd.append("riskLevel", latestReport.risk_level);
+      fd.append("subject",     `OvaCare Consultation Request – ${doctor.category}`);
+      fd.append("body",        buildEmailBody(user, latestReport, doctor.name, doctor.category, cycleReportText, !!reportFile));
+      if (reportFile) fd.append("report", reportFile);
 
-  const handleGmail = () => {
-    if (!user) { onRequireAuth(); return; }
-    const gmailUrl =
-      `https://mail.google.com/mail/?view=cm&fs=1` +
-      `&to=${encodeURIComponent(doctor.email)}` +
-      `&su=${encodeURIComponent(subject)}` +
-      `&body=${encodeURIComponent(body)}`;
-    window.open(gmailUrl, "_blank", "noopener,noreferrer");
+      await API.post("/doctors/contact", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setStatus({ ok: true, msg: "Consultation request sent! The doctor will contact you shortly." });
+      setReportFile(null);
+      if (onEmailSent) onEmailSent();
+    } catch (err) {
+      setStatus({ ok: false, msg: err?.response?.data?.message || "Failed to send. Please try again." });
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -128,22 +144,50 @@ function DoctorCard({ doctor, user, latestReport, cycleReportText, globalIndex, 
 
       {/* Action buttons */}
       {user ? (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex flex-col gap-2">
+          {/* Optional PDF attachment */}
+          <label
+            className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer text-xs font-medium transition"
+            style={{ background: "var(--bg-main)", border: "1.5px dashed var(--border-color)", color: "var(--text-muted)" }}
+          >
+            <span>📎</span>
+            <span className="truncate flex-1">
+              {reportFile ? reportFile.name : "Attach report (optional PDF)"}
+            </span>
+            {reportFile && (
+              <span
+                className="ml-auto font-bold"
+                style={{ color: "#ef4444" }}
+                onClick={(e) => { e.preventDefault(); setReportFile(null); }}
+              >✕</span>
+            )}
+            <input
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={(e) => setReportFile(e.target.files[0] || null)}
+            />
+          </label>
+
+          {status && (
+            <p
+              className="text-xs text-center font-semibold px-3 py-2 rounded-xl"
+              style={{
+                color:      status.ok ? "#065f46" : "#991b1b",
+                background: status.ok ? "#dcfce7"  : "#fee2e2",
+                border:     `1px solid ${status.ok ? "#a7f3d0" : "#fecaca"}`,
+              }}
+            >
+              {status.ok ? "✅ " : "❌ "}{status.msg}
+            </p>
+          )}
           <button
-            onClick={handleMailto}
-            disabled={!emailValid}
-            className="flex-1 px-3 py-2 rounded-full text-xs font-semibold transition hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
+            onClick={handleConsult}
+            disabled={!emailValid || sending}
+            className="w-full px-3 py-2 rounded-full text-xs font-semibold transition hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
             style={{ background: "var(--primary)", color: "white" }}
           >
-            📧 Contact
-          </button>
-          <button
-            onClick={handleGmail}
-            disabled={!emailValid}
-            className="flex-1 px-3 py-2 rounded-full text-xs font-semibold transition hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
-            style={{ background: "transparent", color: "var(--primary)", border: "1.5px solid var(--primary)" }}
-          >
-            🌐 Open in Gmail
+            {sending ? "Sending…" : "📩 Send Consultation Request"}
           </button>
         </div>
       ) : (
@@ -168,7 +212,7 @@ function DoctorCard({ doctor, user, latestReport, cycleReportText, globalIndex, 
  *   onRequireAuth   – called when unauthenticated user clicks a contact button
  *   doctors         – optional array of doctor objects from the DB; falls back to RAW_DOCTORS if empty
  */
-export default function DoctorAccordion({ user, latestReport, cycleReportText, onRequireAuth, doctors: dbDoctors }) {
+export default function DoctorAccordion({ user, latestReport, cycleReportText, onRequireAuth, doctors: dbDoctors, onEmailSent }) {
   const [openCategory, setOpenCategory] = useState(null);
 
   const categories = buildCategoriesFromDB(dbDoctors || []);
@@ -272,6 +316,7 @@ export default function DoctorAccordion({ user, latestReport, cycleReportText, o
                           cycleReportText={cycleReportText}
                           globalIndex={dIdx}
                           onRequireAuth={onRequireAuth}
+                          onEmailSent={onEmailSent}
                         />
                       ))}
                     </div>

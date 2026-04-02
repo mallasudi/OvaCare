@@ -30,7 +30,7 @@ const STRESS_CHART_VAL = { Low: 2, Medium: 3, High: 5 };
 
 function toDay(d) {
   const dt = new Date(d);
-  dt.setUTCHours(0, 0, 0, 0);
+  dt.setHours(0, 0, 0, 0);
   return dt;
 }
 
@@ -283,7 +283,7 @@ const buildFertilityChart = (ovulationDate, fertileStart, fertileEnd) => {
   return { labels, values, types };
 };
 
-const determineCyclePhase = (avgCycleLen, nextPeriodDate) => {
+const determineCyclePhase = (avgCycleLen, nextPeriodDate, periodEnd) => {
   if (!nextPeriodDate) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const next  = new Date(nextPeriodDate); next.setHours(0, 0, 0, 0);
@@ -291,7 +291,14 @@ const determineCyclePhase = (avgCycleLen, nextPeriodDate) => {
   const cycleLen      = avgCycleLen || 28;
   const dayInCycle    = cycleLen - daysUntilNext;
   if (dayInCycle < 1 || dayInCycle > cycleLen) return null;
-  if (dayInCycle <= 5)                                return "menstrual";
+  if (dayInCycle <= 5) {
+    // If period has already ended, advance phase to follicular
+    if (periodEnd) {
+      const end = new Date(periodEnd); end.setHours(0, 0, 0, 0);
+      if (today > end) return "follicular";
+    }
+    return "menstrual";
+  }
   if (dayInCycle <= Math.floor(cycleLen / 2))         return "follicular";
   if (dayInCycle <= Math.floor(cycleLen / 2) + 3)     return "ovulation";
   return "luteal";
@@ -564,6 +571,7 @@ const buildRecommendations = (phase, vitals) => {
 */
 export const getDashboardAnalytics = async (req, res) => {
   try {
+    // Use local midnight so date comparisons match the server's local timezone
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
@@ -576,10 +584,10 @@ export const getDashboardAnalytics = async (req, res) => {
     const streakFrom = new Date(now);
     streakFrom.setDate(streakFrom.getDate() - 29);
 
-    // UTC "YYYY-MM-DD" helper (avoids TZ shift on midnight dates)
-    const utcStr = (d) => {
+    // Local "YYYY-MM-DD" helper
+    const localStr = (d) => {
       const dt = new Date(d);
-      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
     };
 
     // ── Parallel data fetch ────────────────────────────────────────────────────
@@ -597,8 +605,8 @@ export const getDashboardAnalytics = async (req, res) => {
     for (let i = 0; i < 7; i++) {
       const d  = new Date(now);
       d.setDate(d.getDate() - i);
-      const ds  = utcStr(d);
-      const log = logs.find((l) => utcStr(l.date) === ds) ?? null;
+      const ds  = localStr(d);
+      const log = logs.find((l) => localStr(l.date) === ds) ?? null;
 
       const moodScore =
         log?.mood && MOOD_SCORE_FULL[log.mood] != null
@@ -641,14 +649,14 @@ export const getDashboardAnalytics = async (req, res) => {
     const entriesLogged = logsWithData.length;
 
     // Streak: real consecutive days using 30-day window; handles "today not yet logged"
-    const loggedDateSet = new Set(streakLogs.map((l) => utcStr(l.date)));
+    const loggedDateSet = new Set(streakLogs.map((l) => localStr(l.date)));
     let streak = 0;
-    const todayDateStr = utcStr(now);
+    const todayDateStr = localStr(now);
     const streakStart  = loggedDateSet.has(todayDateStr) ? 0 : 1; // skip today if not logged yet
     for (let i = streakStart; i <= 29; i++) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      if (loggedDateSet.has(utcStr(d))) streak++;
+      if (loggedDateSet.has(localStr(d))) streak++;
       else break;
     }
 
@@ -775,9 +783,9 @@ export const getDashboardAnalytics = async (req, res) => {
       predictedOvulation.setDate(predictedOvulation.getDate() - 14);
       const fStart = new Date(predictedOvulation); fStart.setDate(fStart.getDate() - 5);
       const fEnd   = new Date(predictedOvulation); fEnd.setDate(fEnd.getDate() + 1);
-      const today2 = new Date(); today2.setHours(0, 0, 0, 0);
+      const today2 = new Date(); today2.setUTCHours(0, 0, 0, 0);
       const daysToPeriod = Math.round((predictedNext - today2) / MS_PER_DAY);
-      const phase        = determineCyclePhase(avgCycleLength, predictedNext);
+      const phase        = determineCyclePhase(avgCycleLength, predictedNext, latestCycle.period_end);
       cycleInsights = {
         enoughCycleData, totalCycles, phase,
         nextPeriod:    predictedNext.toISOString().split("T")[0],
@@ -817,8 +825,8 @@ export const getDashboardAnalytics = async (req, res) => {
       for (let d = 1; d <= cycleLen; d++) {
         const date = new Date(cycleStartDate);
         date.setDate(date.getDate() + d - 1);
-        const dateStr = utcStr(date);
-        const log     = cyclePeriodLogs.find((l) => utcStr(l.date) === dateStr) ?? null;
+        const dateStr = localStr(date);
+        const log     = cyclePeriodLogs.find((l) => localStr(l.date) === dateStr) ?? null;
 
         let phase;
         if (d <= 5)                                              phase = "menstrual";
@@ -878,5 +886,362 @@ export const getDashboardAnalytics = async (req, res) => {
   } catch (err) {
     console.error("[DASHBOARD_ANALYTICS]", err.message);
     res.status(500).json({ message: "Failed to fetch dashboard analytics" });
+  }
+};
+
+/*
+────────────────────────────────────────────────────────────────────────────────
+  GET /api/analytics/cycle-trend
+  Per-day energy values for the current cycle with phase classification.
+  Answers: "How does my energy change across my cycle?"
+────────────────────────────────────────────────────────────────────────────────
+*/
+export const getCycleTrend = async (req, res) => {
+  try {
+    const cycles = await Cycle.find({ user_id: req.user.userId })
+      .sort({ period_start: 1 })
+      .lean();
+
+    if (!cycles.length) {
+      return res.status(200).json({
+        days: [],
+        cycleLength: 28,
+        phases: null,
+        message: "No cycles logged yet. Track your first period to see this chart.",
+      });
+    }
+
+    const DEFAULT_LEN = 28;
+    let avgCycleLength = DEFAULT_LEN;
+    if (cycles.length >= 2) {
+      const lengths = [];
+      for (let i = 1; i < cycles.length; i++) {
+        const diff = Math.round(
+          (new Date(cycles[i].period_start) - new Date(cycles[i - 1].period_start)) / MS_PER_DAY
+        );
+        if (diff > 0) lengths.push(diff);
+      }
+      if (lengths.length) {
+        avgCycleLength = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
+      }
+    }
+
+    const latestCycle    = cycles[cycles.length - 1];
+    const cycleStartDate = new Date(latestCycle.period_start);
+    cycleStartDate.setHours(0, 0, 0, 0);
+    const ovulationDay = Math.max(1, avgCycleLength - 14);
+    const endOfToday   = new Date(); endOfToday.setHours(23, 59, 59, 999);
+
+    const utcStr = (d) => {
+      const dt = new Date(d);
+      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+    };
+
+    const cycleLogs = await DailyLog.find({
+      user_id: req.user.userId,
+      date: { $gte: cycleStartDate, $lte: endOfToday },
+    }).lean();
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const days  = [];
+
+    for (let d = 1; d <= avgCycleLength; d++) {
+      const date = new Date(cycleStartDate);
+      date.setDate(date.getDate() + d - 1);
+      const log = cycleLogs.find((l) => utcStr(l.date) === utcStr(date)) ?? null;
+
+      let phase;
+      if (d <= 5)                                              phase = "menstrual";
+      else if (d < ovulationDay - 4)                          phase = "follicular";
+      else if (d === ovulationDay)                             phase = "ovulation";
+      else if (d > ovulationDay - 5 && d <= ovulationDay + 1) phase = "fertile";
+      else                                                     phase = "luteal";
+
+      days.push({
+        day:         d,
+        phase,
+        energy:      log?.energy_level ?? null,
+        isFertile:   d >= ovulationDay - 5 && d <= ovulationDay + 1,
+        isOvulation: d === ovulationDay,
+        isFuture:    date > today,
+      });
+    }
+
+    return res.status(200).json({
+      days,
+      cycleLength:  avgCycleLength,
+      phases: {
+        period:    { start: 1,             end: Math.min(5, avgCycleLength) },
+        fertile:   { start: Math.max(1, ovulationDay - 5), end: Math.min(avgCycleLength, ovulationDay + 1) },
+        ovulation: ovulationDay,
+      },
+    });
+  } catch (err) {
+    console.error("[CYCLE_TREND]", err.message);
+    res.status(500).json({ message: "Failed to fetch cycle trend" });
+  }
+};
+
+/*
+────────────────────────────────────────────────────────────────────────────────
+  GET /api/analytics/wellness-trend
+  Last 7 days of energy (1–5) and mood score (1–5).
+  Answers: "How have my energy and mood trended this week?"
+────────────────────────────────────────────────────────────────────────────────
+*/
+export const getWellnessTrend = async (req, res) => {
+  try {
+    const now  = new Date(); now.setHours(0, 0, 0, 0);
+    const from = new Date(now); from.setDate(from.getDate() - 6);
+    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+
+    const utcStr = (d) => {
+      const dt = new Date(d);
+      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+    };
+
+    const logs = await DailyLog.find({
+      user_id: req.user.userId,
+      date: { $gte: from, $lte: endOfToday },
+    }).lean();
+
+    const dates  = [];
+    const energy = [];
+    const mood   = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const d  = new Date(now); d.setDate(d.getDate() - i);
+      const ds = utcStr(d);
+      const log = logs.find((l) => utcStr(l.date) === ds) ?? null;
+
+      const moodRaw = log?.mood && MOOD_SCORE_FULL[log.mood] != null
+        ? Math.round(MOOD_SCORE_FULL[log.mood] / 20)
+        : null;
+
+      dates.push(d.toLocaleDateString("en-US", { weekday: "short" }));
+      energy.push(log?.energy_level ?? null);
+      mood.push(moodRaw);
+    }
+
+    const hasData = energy.some((v) => v != null) || mood.some((v) => v != null);
+
+    return res.status(200).json({
+      dates,
+      energy,
+      mood,
+      hasData,
+      message: hasData ? null : "Log at least 2 days to see your wellness trend.",
+    });
+  } catch (err) {
+    console.error("[WELLNESS_TREND]", err.message);
+    res.status(500).json({ message: "Failed to fetch wellness trend" });
+  }
+};
+
+/*
+────────────────────────────────────────────────────────────────────────────────
+  GET /api/analytics/sleep-stress
+  Last 7 days comparing sleep hours (normalised 1–5) vs stress (1–5).
+  Answers: "Is poor sleep driving my stress levels up?"
+────────────────────────────────────────────────────────────────────────────────
+*/
+export const getSleepStress = async (req, res) => {
+  try {
+    const now  = new Date(); now.setHours(0, 0, 0, 0);
+    const from = new Date(now); from.setDate(from.getDate() - 6);
+    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+
+    const utcStr = (d) => {
+      const dt = new Date(d);
+      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+    };
+
+    const logs = await DailyLog.find({
+      user_id: req.user.userId,
+      date: { $gte: from, $lte: endOfToday },
+    }).lean();
+
+    const dates    = [];
+    const sleep    = [];
+    const sleepRaw = [];
+    const stress   = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const d  = new Date(now); d.setDate(d.getDate() - i);
+      const ds = utcStr(d);
+      const log = logs.find((l) => utcStr(l.date) === ds) ?? null;
+
+      dates.push(d.toLocaleDateString("en-US", { weekday: "short" }));
+      sleepRaw.push(log?.sleep_hours ?? null);
+      sleep.push(SLEEP_NORM(log?.sleep_hours ?? null));
+      stress.push(log?.stress_level ? STRESS_CHART_VAL[log.stress_level] : null);
+    }
+
+    const hasData = sleep.some((v) => v != null) || stress.some((v) => v != null);
+
+    return res.status(200).json({
+      dates,
+      sleep,
+      sleepRaw,
+      stress,
+      hasData,
+      message: hasData ? null : "Log sleep and stress for 2+ days to see the correlation.",
+    });
+  } catch (err) {
+    console.error("[SLEEP_STRESS]", err.message);
+    res.status(500).json({ message: "Failed to fetch sleep vs stress data" });
+  }
+};
+
+/*
+────────────────────────────────────────────────────────────────────────────────
+  GET /api/analytics/top-symptoms
+  Top 5 most frequent PCOS symptoms from the last 30 days of logs.
+  Answers: "What symptoms am I experiencing most often?"
+────────────────────────────────────────────────────────────────────────────────
+*/
+export const getTopSymptoms = async (req, res) => {
+  try {
+    const now  = new Date(); now.setHours(0, 0, 0, 0);
+    const from = new Date(now); from.setDate(from.getDate() - 29);
+    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+
+    const logs = await DailyLog.find({
+      user_id: req.user.userId,
+      date: { $gte: from, $lte: endOfToday },
+    }).select("symptoms").lean();
+
+    if (!logs.length) {
+      return res.status(200).json({
+        symptoms: [],
+        counts:   [],
+        message:  "No symptoms logged in the last 30 days.",
+      });
+    }
+
+    const freq = {};
+    logs.forEach((l) =>
+      (l.symptoms || []).forEach((s) => {
+        const clean = s.replace(/^#/, "");
+        freq[clean] = (freq[clean] || 0) + 1;
+      })
+    );
+
+    const sorted = Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    return res.status(200).json({
+      symptoms: sorted.map(([s]) => s),
+      counts:   sorted.map(([, c]) => c),
+      total:    logs.length,
+    });
+  } catch (err) {
+    console.error("[TOP_SYMPTOMS]", err.message);
+    res.status(500).json({ message: "Failed to fetch top symptoms" });
+  }
+};
+
+/*
+────────────────────────────────────────────────────────────────────────────────
+  GET /api/analytics/health-insights
+  Evidence-based PCOS health insights derived from last 7 days of logs.
+  Answers: "What health patterns should I be aware of?"
+────────────────────────────────────────────────────────────────────────────────
+*/
+export const getHealthInsights = async (req, res) => {
+  try {
+    const now  = new Date(); now.setHours(0, 0, 0, 0);
+    const from = new Date(now); from.setDate(from.getDate() - 6);
+    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+
+    const utcStr = (d) => {
+      const dt = new Date(d);
+      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+    };
+
+    const [logs, cycles, latestReport] = await Promise.all([
+      DailyLog.find({ user_id: req.user.userId, date: { $gte: from, $lte: endOfToday } }).lean(),
+      Cycle.find({ user_id: req.user.userId }).sort({ period_start: 1 }).lean(),
+      PCOSReport.findOne({ user_id: req.user.userId }).sort({ created_at: -1 }).lean(),
+    ]);
+
+    const week = [];
+    for (let i = 6; i >= 0; i--) {
+      const d   = new Date(now); d.setDate(d.getDate() - i);
+      const ds  = utcStr(d);
+      const log = logs.find((l) => utcStr(l.date) === ds) ?? null;
+      if (log) {
+        week.push({
+          energy:    log.energy_level    ?? null,
+          moodScore: log.mood && MOOD_SCORE_FULL[log.mood] != null ? Math.round(MOOD_SCORE_FULL[log.mood] / 20) : null,
+          mood:      log.mood            ?? null,
+          sleepRaw:  log.sleep_hours     ?? null,
+          stressRaw: log.stress_level    ?? null,
+          stressNum: log.stress_level    ? STRESS_CHART_VAL[log.stress_level] : null,
+          water:     log.water_intake    ?? null,
+          symptoms:  log.symptoms        ?? [],
+        });
+      }
+    }
+
+    const entriesLogged   = week.length;
+    const avg = (arr) => arr.length ? +(arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
+
+    const energyVals     = week.map((w) => w.energy).filter((v) => v != null);
+    const sleepVals      = week.map((w) => w.sleepRaw).filter((v) => v != null);
+    const waterVals      = week.map((w) => w.water).filter((v) => v != null);
+    const moodScores     = week.map((w) => w.moodScore).filter((v) => v != null);
+    const avgEnergy      = avg(energyVals);
+    const avgSleep       = avg(sleepVals);
+    const avgWater       = avg(waterVals);
+    const avgMoodScore   = moodScores.length ? Math.round(moodScores.reduce((a, b) => a + b, 0) / moodScores.length) : null;
+
+    const stressFreq = { Low: 0, Medium: 0, High: 0 };
+    week.forEach((w) => { if (w.stressRaw) stressFreq[w.stressRaw]++; });
+    const highStressCount = stressFreq.High;
+
+    const fatigueCount   = week.filter((w) => (w.symptoms || []).some((s) => s.toLowerCase().includes("fatigue"))).length;
+    const tiredMoodCount = week.filter((w) => w.mood === "Tired").length;
+
+    const moodCount = {};
+    week.forEach((w) => { if (w.mood) moodCount[w.mood] = (moodCount[w.mood] || 0) + 1; });
+    const topMoodEntry = Object.entries(moodCount).sort((a, b) => b[1] - a[1])[0];
+    const topMood = topMoodEntry?.[0] ?? null;
+
+    const symCount = {};
+    week.forEach((w) => (w.symptoms || []).forEach((s) => { symCount[s] = (symCount[s] || 0) + 1; }));
+    const topSymEntry = Object.entries(symCount).sort((a, b) => b[1] - a[1])[0];
+    const topSymptom = topSymEntry?.[0] ?? null;
+
+    // Determine cycle phase
+    let cyclePhase = null;
+    if (cycles.length >= 1) {
+      const DEFAULT_LEN = 28;
+      let avgCycleLength = DEFAULT_LEN;
+      if (cycles.length >= 2) {
+        const lengths = [];
+        for (let i = 1; i < cycles.length; i++) {
+          const diff = Math.round((new Date(cycles[i].period_start) - new Date(cycles[i - 1].period_start)) / MS_PER_DAY);
+          if (diff > 0) lengths.push(diff);
+        }
+        if (lengths.length) avgCycleLength = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
+      }
+      const latestStart   = new Date(cycles[cycles.length - 1].period_start);
+      const predictedNext = new Date(latestStart);
+      predictedNext.setDate(predictedNext.getDate() + avgCycleLength);
+      cyclePhase = determineCyclePhase(avgCycleLength, predictedNext);
+    }
+
+    const insights = generateInsights({
+      avgEnergy, avgSleep, avgWater, highStressCount,
+      fatigueCount, tiredMoodCount, topMood, topSymptom,
+      entriesLogged, streak: 0, stressFreq, cyclePhase, avgMoodScore,
+    });
+
+    return res.status(200).json({ insights });
+  } catch (err) {
+    console.error("[HEALTH_INSIGHTS]", err.message);
+    res.status(500).json({ message: "Failed to generate health insights" });
   }
 };

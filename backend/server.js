@@ -18,6 +18,8 @@ import analyticsRoutes from "./routes/analyticsRoutes.js";
 import adminRoutes     from "./routes/adminRoutes.js";
 import uploadRoutes    from "./routes/uploadRoutes.js";
 import doctorRoutes    from "./routes/doctorRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
+import { getSettings } from "./services/settingsService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -35,6 +37,20 @@ app.use(cors({
 app.use(express.json({ limit: "10mb" })); // Increased limit for profile picture uploads
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
+// Global maintenance mode gate (exempt /api/auth so admin can still log in)
+app.use(async (req, res, next) => {
+  if (req.path.startsWith("/api/auth")) return next();
+  try {
+    const settings = await getSettings();
+    if (settings.maintenanceMode) {
+      return res.status(503).json({ message: "App is under maintenance. Please check back later." });
+    }
+  } catch {
+    // If settings can't be read, allow request through
+  }
+  next();
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/pcos", pcosRoutes);
@@ -45,6 +61,7 @@ app.use("/api/analytics",  analyticsRoutes);
 app.use("/api/admin",      adminRoutes);
 app.use("/api/upload",     uploadRoutes);
 app.use("/api/doctors",    doctorRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Serve uploaded images as static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));

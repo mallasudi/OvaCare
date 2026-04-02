@@ -11,6 +11,7 @@ const doctorSchema = new mongoose.Schema({
   description:    { type: String, default: "" },
   phone:          { type: String, default: "" },
   isActive:       { type: Boolean, default: true },
+  connections:    { type: Number, default: 0 },
   createdAt:      { type: Date, default: Date.now },
 });
 

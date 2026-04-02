@@ -2,5 +2,73 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --primary: #C57C8A;
+  --primary-hover: #b56a78;
+  --primary-light: #fce7ea;
+  --bg-main: #fff5f7;
+  --bg-secondary: #fff0f3;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --border: #fce4e9;
+  --text-main: #2d2d3a;
+  --text-muted: #9b8a90;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background: #f8fafc; }
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: linear-gradient(135deg, #fff5f7 0%, #ffe4ec 100%);
+  min-height: 100vh;
+  color: var(--text-main);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #f0c8d0; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #C57C8A; }
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(197,124,138,0.4); }
+  70%  { box-shadow: 0 0 0 10px rgba(197,124,138,0); }
+  100% { box-shadow: 0 0 0 0 rgba(197,124,138,0); }
+}
+
+.animate-fade-up {
+  animation: fadeInUp 0.5s ease both;
+}
+
+/* Glass cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(252, 228, 233, 0.8);
+  border-radius: 20px;
+  box-shadow: 0 4px 24px rgba(197, 124, 138, 0.08), 0 1px 4px rgba(0,0,0,0.04);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(197, 124, 138, 0.16), 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* Skeleton loader */
+.skeleton {
+  background: linear-gradient(90deg, #fce7ea 25%, #fff0f3 50%, #fce7ea 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 12px;
+}
+

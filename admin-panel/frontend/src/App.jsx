@@ -7,17 +7,22 @@ import Dashboard from "./pages/Dashboard.jsx";
 import Users from "./pages/Users.jsx";
 import Reports from "./pages/Reports.jsx";
 import Doctors from "./pages/Doctors.jsx";
+import Notifications from "./pages/Notifications.jsx";
+import Settings from "./pages/Settings.jsx";
 
 function AdminLayout() {
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen" style={{ background: "linear-gradient(135deg, #fff5f7 0%, #ffe4ec 100%)" }}>
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
         <Routes>
-          <Route index       element={<Dashboard />} />
-          <Route path="users"   element={<Users />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="doctors" element={<Doctors />} />
+          <Route index                    element={<Dashboard />} />
+          <Route path="users"             element={<Users />} />
+          <Route path="reports"           element={<Reports />} />
+          <Route path="doctors"           element={<Doctors />} />
+          <Route path="notifications"     element={<Notifications />} />
+          <Route path="settings"          element={<Settings />} />
+          <Route path="*"                 element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>
@@ -39,3 +44,4 @@ export default function App() {
     </Routes>
   );
 }
+

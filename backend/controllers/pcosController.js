@@ -1,5 +1,7 @@
 import PCOSReport from "../models/PCOSReport.js";
+import Notification from "../models/Notification.js";
 import axios from "axios";
+import { getSettings } from "../services/settingsService.js";
 
 const ML_SERVICE_URL = "http://127.0.0.1:5001/predict";
 
@@ -87,6 +89,23 @@ export const predictPCOS = async (req, res) => {
     });
 
     console.log("[AUTH PREDICT] Report saved:", report._id);
+
+    // High-risk alert notification
+    try {
+      const settings = await getSettings();
+      if (settings.highRiskAlert && result.risk === "High") {
+        await Notification.create({
+          title:   "High PCOS Risk Detected",
+          message: `A user (ID: ${req.user.userId}) has been assessed with High PCOS risk. Report ID: ${report._id}`,
+          type:    "alert",
+          audience: "admin",
+          sentBy:  "System",
+        });
+        console.log("[AUTH PREDICT] High-risk alert notification created");
+      }
+    } catch (notifErr) {
+      console.error("[AUTH PREDICT] Failed to create high-risk notification:", notifErr.message);
+    }
 
     // Include reportId in response so frontend can link directly to this report
     res.status(200).json({ ...result, reportId: report._id.toString() });

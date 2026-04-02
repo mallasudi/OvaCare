@@ -11,7 +11,7 @@ import {
   PieController,
 } from "chart.js";
 import { Pie, Bar } from "react-chartjs-2";
-import adminApi from "../../utils/adminApi";
+import api from "../api.js";
 
 ChartJS.register(
   ArcElement, Tooltip, Legend,
@@ -41,13 +41,13 @@ function StatCard({ label, value, icon, color = "#C57C8A", sub }) {
 }
 
 /* ── Main Page ───────────────────────────────────────────────────────── */
-export default function AdminDoctorAnalytics() {
+export default function DoctorAnalytics() {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
 
   useEffect(() => {
-    adminApi.get("/doctor-analytics")
+    api.get("/doctor-analytics")
       .then((r) => setData(r.data))
       .catch((err) => setError(err.response?.data?.message || "Failed to load analytics"))
       .finally(() => setLoading(false));

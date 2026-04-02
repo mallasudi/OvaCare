@@ -193,3 +193,65 @@ export const deleteUser = async (req, res) => {
     return res.status(500).json({ message: "Failed to delete user" });
   }
 };
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PATCH /api/admin/users/:id/block
+   Toggle blocked status of a user
+───────────────────────────────────────────────────────────────────────── */
+export const toggleBlockUser = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.role === "admin") return res.status(403).json({ message: "Cannot block admin accounts" });
+
+    user.isBlocked = !user.isBlocked;
+    await user.save();
+
+    return res.status(200).json({
+      message: user.isBlocked ? "User blocked" : "User unblocked",
+      isBlocked: user.isBlocked,
+    });
+  } catch (err) {
+    console.error("[TOGGLE_BLOCK_USER]", err.message);
+    return res.status(500).json({ message: "Failed to toggle block status" });
+  }
+};
+
+/* ─────────────────────────────────────────────────────────────────────────
+   GET /api/admin/users/growth
+   Monthly user registration counts for the last 6 months
+───────────────────────────────────────────────────────────────────────── */
+export const getUserGrowth = async (req, res) => {
+  try {
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    const growth = await User.aggregate([
+      { $match: { role: { $ne: "admin" }, createdAt: { $gte: sixMonthsAgo } } },
+      {
+        $group: {
+          _id: { year: { $year: "$createdAt" }, month: { $month: "$createdAt" } },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1 } },
+    ]);
+
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const result = growth.map((g) => ({
+      label: `${months[g._id.month - 1]} ${g._id.year}`,
+      count: g.count,
+    }));
+
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error("[GET_USER_GROWTH]", err.message);
+    return res.status(500).json({ message: "Failed to fetch user growth" });
+  }
+};

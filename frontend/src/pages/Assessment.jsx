@@ -4,6 +4,11 @@ import { motion } from "framer-motion";
 import API from "../utils/api";
 import { useAuth } from "../context/AuthContext";
 
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  visible: (i = 0) => ({ opacity: 1, y: 0, transition: { delay: i * 0.12, duration: 0.5 } }),
+};
+
 const yesNo = ["No", "Yes"];
 const severity = ["None", "Mild", "Moderate", "Severe"];
 const stress = ["Low", "Medium", "High"];
@@ -186,55 +191,71 @@ export default function Assessment() {
   };
 
   return (
-    <div className="min-h-screen pb-28" style={{ background: "var(--bg-main)" }}>
-      <div className="max-w-4xl mx-auto px-4 py-10">
+    <div className="relative min-h-screen pb-20 overflow-hidden" style={{ background: "var(--bg-main)" }}>
 
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div
-              className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-md"
-              style={{ background: "linear-gradient(135deg, var(--primary), var(--accent))" }}
-            >
-              🩺
-            </div>
-            <div>
-              <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: "var(--accent)" }}>
-                PCOS Screening Assessment
-              </h1>
-              <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
-                AI-powered risk analysis · Takes ~3 minutes
-              </p>
-            </div>
-          </div>
-          <p className="text-xs px-4 py-2.5 rounded-xl inline-block" style={{ background: "color-mix(in srgb, var(--primary) 10%, transparent)", color: "var(--text-muted)" }}>
-            ⚠️ This assessment provides a PCOS risk indication — not a medical diagnosis. Please consult a doctor.
+      {/* Animated background blobs */}
+      <motion.div
+        animate={{ scale: [1, 1.15, 1], x: [0, 25, 0], y: [0, -15, 0] }}
+        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute -top-40 -right-40 w-[420px] h-[420px] rounded-full blur-3xl pointer-events-none"
+        style={{ background: "color-mix(in srgb, var(--primary) 18%, transparent)" }}
+      />
+      <motion.div
+        animate={{ scale: [1, 1.2, 1], x: [0, -30, 0], y: [0, 20, 0] }}
+        transition={{ duration: 16, repeat: Infinity, ease: "easeInOut", delay: 4 }}
+        className="absolute -bottom-32 -left-32 w-[380px] h-[380px] rounded-full blur-3xl pointer-events-none"
+        style={{ background: "color-mix(in srgb, var(--accent) 12%, transparent)" }}
+      />
+
+      {/* ══ PAGE TITLE ═══════════════════════════════════════════ */}
+      <div className="relative z-10 max-w-4xl mx-auto px-4 pt-14 pb-4 text-center">
+        <motion.div variants={fadeUp} initial="hidden" animate="visible">
+          <motion.span
+            animate={{ scale: [1, 1.04, 1] }}
+            transition={{ duration: 2.5, repeat: Infinity }}
+            className="inline-flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-full mb-5 shadow-sm"
+            style={{
+              background: "linear-gradient(135deg, var(--primary), var(--accent))",
+              color: "white",
+              boxShadow: "0 4px 16px color-mix(in srgb, var(--primary) 30%, transparent)",
+            }}
+          >
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            🩺 PCOS Risk Assessment
+          </motion.span>
+          <h1 className="text-4xl sm:text-5xl font-extrabold mb-3 leading-tight tracking-tight" style={{ color: "var(--text-main)" }}>
+            PCOS Screening{" "}
+            <span style={{ color: "var(--primary)" }}>Assessment</span>
+          </h1>
+          <p className="text-lg leading-relaxed max-w-xl mx-auto mb-3" style={{ color: "var(--text-muted)" }}>
+            AI-powered risk analysis · Takes ~3 minutes
+          </p>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+            ⚠️ Not a diagnostic tool — for awareness &amp; lifestyle guidance only. Please consult a doctor.
           </p>
         </motion.div>
+      </div>
 
-        {/* Authentication Status Banner */}
+      <div className="relative z-10 max-w-4xl mx-auto px-4 py-8">
+
+        {/* Auth banners */}
         {isReady && !isAuthenticated && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 p-4 rounded-2xl"
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            className="mb-6 p-5 rounded-2xl"
             style={{
-              background: "linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.05))",
-              border: "2px solid rgba(59, 130, 246, 0.2)",
+              background: "linear-gradient(135deg, rgba(59,130,246,0.08), rgba(99,102,241,0.05))",
+              border: "2px solid rgba(59,130,246,0.2)",
             }}
           >
             <div className="flex items-start gap-3">
               <span className="text-2xl">ℹ️</span>
               <div className="flex-1">
-                <p className="font-bold text-sm mb-1" style={{ color: "var(--text-main)" }}>
-                  Public Assessment Mode
-                </p>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  You're not logged in. After completing this form, you'll be redirected to login/register. 
+                <p className="font-bold text-sm mb-1" style={{ color: "var(--text-main)" }}>Public Assessment Mode</p>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                  You're not logged in. After completing this form, you'll be redirected to login/register.
                   Your assessment data will be saved securely and processed after you log in.
                 </p>
               </div>
@@ -244,21 +265,20 @@ export default function Assessment() {
 
         {isReady && isAuthenticated && (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 p-4 rounded-2xl"
+            variants={fadeUp}
+            initial="hidden"
+            animate="visible"
+            className="mb-6 p-5 rounded-2xl"
             style={{
-              background: "linear-gradient(135deg, rgba(34, 197, 94, 0.08), rgba(74, 222, 128, 0.05))",
-              border: "2px solid rgba(34, 197, 94, 0.2)",
+              background: "linear-gradient(135deg, rgba(34,197,94,0.08), rgba(74,222,128,0.05))",
+              border: "2px solid rgba(34,197,94,0.2)",
             }}
           >
             <div className="flex items-start gap-3">
               <span className="text-2xl">✅</span>
               <div className="flex-1">
-                <p className="font-bold text-sm mb-1" style={{ color: "var(--text-main)" }}>
-                  Logged in as {user?.name}
-                </p>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                <p className="font-bold text-sm mb-1" style={{ color: "var(--text-main)" }}>Logged in as {user?.name}</p>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
                   Your assessment results will be saved to your profile and accessible in your dashboard.
                 </p>
               </div>
@@ -266,15 +286,16 @@ export default function Assessment() {
           </motion.div>
         )}
 
-        {/* Progress Steps */}
+        {/* Section stepper */}
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
-          className="mb-6 p-4 rounded-2xl"
+          variants={fadeUp}
+          custom={1}
+          initial="hidden"
+          animate="visible"
+          className="mb-8 p-5 rounded-2xl shadow-sm"
           style={{ background: "var(--card-bg)", border: "1px solid var(--border-color)" }}
         >
-          <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "var(--text-muted)" }}>Assessment Sections</p>
+          <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "var(--text-muted)" }}>Assessment Sections</p>
           <div className="flex items-center gap-1">
             {[
               { label: "Body", icon: "📐", color: "#3b82f6" },
@@ -285,38 +306,42 @@ export default function Assessment() {
               <div key={i} className="flex items-center flex-1">
                 <div className="flex flex-col items-center flex-1">
                   <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-base font-bold shadow-sm"
-                    style={{ background: `${step.color}20`, color: step.color, border: `2px solid ${step.color}40` }}
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold shadow-sm"
+                    style={{ background: `${step.color}18`, color: step.color, border: `2px solid ${step.color}35` }}
                   >
                     {step.icon}
                   </div>
-                  <span className="text-xs mt-1 font-medium hidden sm:block" style={{ color: "var(--text-muted)" }}>{step.label}</span>
+                  <span className="text-xs mt-1.5 font-semibold hidden sm:block" style={{ color: "var(--text-muted)" }}>{step.label}</span>
                 </div>
                 {i < arr.length - 1 && (
-                  <div className="h-0.5 flex-1 mx-1 rounded-full" style={{ background: "var(--border-color)" }} />
+                  <div className="h-0.5 flex-1 mx-2 rounded-full" style={{ background: "var(--border-color)" }} />
                 )}
               </div>
             ))}
           </div>
         </motion.div>
 
+        {/* Form card */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="rounded-3xl shadow-xl p-6 md:p-10"
-          style={{ background: "var(--card-bg)", border: "1px solid var(--border-color)" }}
+          variants={fadeUp}
+          custom={2}
+          initial="hidden"
+          animate="visible"
+          className="rounded-3xl shadow-xl p-6 sm:p-10"
+          style={{
+            background: "var(--card-bg)",
+            border: "1px solid var(--border-color)",
+            boxShadow: "0 8px 40px color-mix(in srgb, var(--primary) 8%, transparent)",
+          }}
         >
           <form className="space-y-10" onSubmit={handleSubmit}>
-
-            {/* BODY METRICS */}
             <Section title="📐 Body Metrics" subtitle="Your height and weight to calculate BMI" accent="#3b82f6">
               <Grid>
                 <Input label="Weight (kg)" type="number" value={form.weight_kg} onChange={update("weight_kg")} error={errors.weight_kg} />
                 <Input label="Height (feet)" type="number" value={form.height_feet} onChange={update("height_feet")} error={errors.height_feet} />
                 <Input label="Height (inches)" type="number" value={form.height_inches} onChange={update("height_inches")} error={errors.height_inches} />
               </Grid>
-              <div className="mt-4 p-4 rounded-2xl text-sm font-medium flex flex-wrap gap-6"
+              <div className="mt-5 p-5 rounded-2xl text-sm font-medium flex flex-wrap gap-6"
                 style={{ background: "var(--bg-main)", color: "var(--text-muted)", border: "1px solid var(--border-color)" }}>
                 <span>Height: <span style={{ color: "var(--accent)", fontWeight: 700 }}>{heightM ? `${heightM} m` : "–"}</span></span>
                 <span>BMI: <span style={{ color: "var(--accent)", fontWeight: 700 }}>{bmi || "–"}</span></span>
@@ -328,7 +353,6 @@ export default function Assessment() {
               </div>
             </Section>
 
-            {/* LIFESTYLE */}
             <Section title="🌿 Lifestyle" subtitle="Daily habits that influence hormonal health" accent="#22c55e">
               <Grid>
                 <Input label="Sleep hours/day" type="number" value={form.sleep_hours} onChange={update("sleep_hours")} error={errors.sleep_hours} />
@@ -341,7 +365,6 @@ export default function Assessment() {
               </Grid>
             </Section>
 
-            {/* MENSTRUAL */}
             <Section title="🩸 Menstrual Health" subtitle="Your cycle patterns and symptoms" accent="#ec4899">
               <Grid>
                 <Select label="Cycle regularity" value={form.cycle_regularity} onChange={update("cycle_regularity")} options={regularity} />
@@ -352,7 +375,6 @@ export default function Assessment() {
               </Grid>
             </Section>
 
-            {/* SYMPTOMS */}
             <Section title="💊 Symptoms" subtitle="Hormonal and physical signs of PCOS" accent="#8b5cf6">
               <Grid>
                 <Select label="Excess hair growth" value={form.hair_growth} onChange={update("hair_growth")} options={severity} />
@@ -365,9 +387,7 @@ export default function Assessment() {
             </Section>
 
             {formError && (
-              <p className="text-sm font-semibold" style={{ color: "#ef4444" }}>
-                {formError}
-              </p>
+              <p className="text-sm font-semibold" style={{ color: "#ef4444" }}>{formError}</p>
             )}
 
             <motion.button
@@ -377,12 +397,8 @@ export default function Assessment() {
               disabled={loading}
               className="w-full py-4 rounded-2xl text-white font-bold text-lg shadow-xl transition-all"
               style={{
-                background: loading
-                  ? "var(--text-muted)"
-                  : "linear-gradient(135deg, var(--primary), var(--accent))",
-                boxShadow: loading
-                  ? "none"
-                  : "0 8px 32px color-mix(in srgb, var(--primary) 45%, transparent)",
+                background: loading ? "var(--text-muted)" : "linear-gradient(135deg, var(--primary), var(--accent))",
+                boxShadow: loading ? "none" : "0 8px 32px color-mix(in srgb, var(--primary) 45%, transparent)",
               }}
             >
               {loading ? (
@@ -397,12 +413,11 @@ export default function Assessment() {
             </motion.button>
           </form>
 
-          {/* RESULT BANNER */}
           {result && (
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              className="mt-8 p-7 rounded-2xl text-center relative overflow-hidden"
+              className="mt-8 p-7 rounded-2xl text-center"
               style={{
                 background: result.risk === "High"
                   ? "linear-gradient(135deg, rgba(220,38,38,0.08), rgba(239,68,68,0.05))"
@@ -412,27 +427,18 @@ export default function Assessment() {
                 border: `2px solid ${result.risk === "High" ? "#dc2626" : result.risk === "Moderate" ? "#f59e0b" : "#22c55e"}50`,
               }}
             >
-              <motion.div
-                animate={{ scale: [1, 1.15, 1] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-                className="text-5xl mb-3"
-              >
+              <motion.div animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 1.5, repeat: Infinity }} className="text-5xl mb-3">
                 {result.risk === "High" ? "🔴" : result.risk === "Moderate" ? "🟡" : "🟢"}
               </motion.div>
-              <h3 className="text-2xl font-extrabold mb-1" style={{ color: "var(--accent)" }}>
-                Risk Level: {result.risk}
-              </h3>
+              <h3 className="text-2xl font-extrabold mb-1" style={{ color: "var(--text-main)" }}>Risk Level: <span style={{ color: result.risk === "High" ? "#dc2626" : result.risk === "Moderate" ? "#f59e0b" : "#22c55e" }}>{result.risk}</span></h3>
               <p className="text-sm" style={{ color: "var(--text-muted)" }}>
                 {result.message || (result.confidence ? `Confidence: ${(result.confidence * 100).toFixed(0)}%` : "")}
               </p>
-              <p className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>
-                ✅ Redirecting to your detailed report…
-              </p>
+              <p className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>✅ Redirecting to your detailed report…</p>
             </motion.div>
           )}
         </motion.div>
       </div>
-      {/* Assessment is a public page — no BottomNav */}
     </div>
   );
 }
@@ -441,9 +447,9 @@ export default function Assessment() {
 
 function Section({ title, subtitle, accent = "var(--primary)", children }) {
   return (
-    <section className="relative pl-4" style={{ borderLeft: `3px solid ${accent}` }}>
-      <h2 className="text-lg font-extrabold mb-0.5" style={{ color: "var(--accent)" }}>{title}</h2>
-      {subtitle && <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>{subtitle}</p>}
+    <section className="relative pl-5" style={{ borderLeft: `3px solid ${accent}` }}>
+      <h2 className="text-xl font-bold mb-0.5" style={{ color: "var(--text-main)" }}>{title}</h2>
+      {subtitle && <p className="text-sm mb-5 leading-relaxed" style={{ color: "var(--text-muted)" }}>{subtitle}</p>}
       {children}
     </section>
   );
@@ -456,9 +462,9 @@ function Grid({ children }) {
 function Input({ label, error, ...props }) {
   return (
     <div>
-      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>{label}</label>
+      <label className="block text-sm font-semibold mb-2" style={{ color: "var(--text-muted)" }}>{label}</label>
       <input
-        className="w-full rounded-xl px-4 py-2.5 text-sm outline-none transition-all duration-200"
+        className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200"
         style={{
           background: "var(--bg-main)",
           border: `1.5px solid ${error ? "#ef4444" : "var(--border-color)"}`,
@@ -467,7 +473,7 @@ function Input({ label, error, ...props }) {
         aria-invalid={!!error}
         onFocus={e => {
           e.target.style.borderColor = "var(--primary)";
-          e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent)";
+          e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent)";
         }}
         onBlur={e => {
           e.target.style.borderColor = error ? "#ef4444" : "var(--border-color)";
@@ -482,9 +488,9 @@ function Input({ label, error, ...props }) {
 function Select({ label, options, ...props }) {
   return (
     <div>
-      <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>{label}</label>
+      <label className="block text-sm font-semibold mb-2" style={{ color: "var(--text-muted)" }}>{label}</label>
       <select
-        className="w-full rounded-xl px-4 py-2.5 text-sm outline-none transition-all duration-200 cursor-pointer"
+        className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all duration-200 cursor-pointer"
         style={{
           background: "var(--bg-main)",
           border: "1.5px solid var(--border-color)",
@@ -492,7 +498,7 @@ function Select({ label, options, ...props }) {
         }}
         onFocus={e => {
           e.target.style.borderColor = "var(--primary)";
-          e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent)";
+          e.target.style.boxShadow = "0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent)";
         }}
         onBlur={e => {
           e.target.style.borderColor = "var(--border-color)";

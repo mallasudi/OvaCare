@@ -2,7 +2,8 @@
   "name": "ovacare-root",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix frontend\" \"npm start --prefix backend\""
+    "dev": "concurrently \"npm run dev --prefix frontend\" \"npm start --prefix backend\"",
+    "admin": "concurrently -n \"admin-backend,admin-ui\" -c \"blue,magenta\" \"npm run dev --prefix admin-backend\" \"npm run dev --prefix admin-panel/frontend\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

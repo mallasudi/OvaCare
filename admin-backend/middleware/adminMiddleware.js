@@ -17,12 +17,12 @@ const adminMiddleware = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Re-check DB so a demoted admin can't keep using an old token
-    const user = await User.findById(decoded.userId).select("role").lean();
+    const user = await User.findById(decoded.userId).select("role name").lean();
     if (!user || user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden — admin access required" });
     }
 
-    req.admin = { userId: decoded.userId, role: "admin" };
+    req.admin = { userId: decoded.userId, role: "admin", name: user.name ?? "Admin" };
     next();
   } catch {
     return res.status(401).json({ message: "Invalid or expired token" });

@@ -118,6 +118,11 @@ export default function Login() {
                 value={password} onChange={e => setPassword(e.target.value)} required
                 onFocus={e => e.target.style.borderColor = "var(--primary)"}
                 onBlur={e => e.target.style.borderColor = "var(--border-color)"} />
+              <div className="text-right mt-1.5">
+                <Link to="/forgot-password" className="text-xs font-semibold hover:underline" style={{ color: "var(--primary)" }}>
+                  Forgot Password?
+                </Link>
+              </div>
             </div>
             <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} type="submit" disabled={loading}
               className="w-full py-3.5 rounded-2xl text-white font-bold shadow-lg transition mt-2"

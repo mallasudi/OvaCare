@@ -1,5 +1,6 @@
 import Doctor from "../models/Doctor.js";
 import DoctorConnection from "../models/DoctorConnection.js";
+import Settings from "../models/Settings.js";
 
 /* ─────────────────────────────────────────────────────────────────────────
    POST /api/admin/doctors
@@ -18,9 +19,12 @@ export const addDoctor = async (req, res) => {
       return res.status(409).json({ message: "A doctor with this email already exists" });
     }
 
+    const settings = await Settings.findOne().lean();
+    const status = settings?.autoApproveDoctors ? "ACTIVE" : "PENDING";
+
     const doctor = await Doctor.create({
       name, email, specialization, experience, hospital,
-      location, image, description, phone,
+      location, image, description, phone, status,
     });
 
     return res.status(201).json({ message: "Doctor added", doctor });
@@ -129,6 +133,22 @@ export const toggleDoctorStatus = async (req, res) => {
   } catch (err) {
     console.error("[TOGGLE_DOCTOR]", err.message);
     return res.status(500).json({ message: "Failed to toggle doctor status" });
+  }
+};
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DELETE /api/admin/doctors/:id
+   Permanently remove a doctor record
+───────────────────────────────────────────────────────────────────────── */
+export const deleteDoctor = async (req, res) => {
+  try {
+    const doctor = await Doctor.findByIdAndDelete(req.params.id);
+    if (!doctor) return res.status(404).json({ message: "Doctor not found" });
+
+    return res.status(200).json({ message: "Doctor deleted" });
+  } catch (err) {
+    console.error("[DELETE_DOCTOR]", err.message);
+    return res.status(500).json({ message: "Failed to delete doctor" });
   }
 };
 
