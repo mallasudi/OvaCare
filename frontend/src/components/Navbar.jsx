@@ -48,9 +48,7 @@ export default function Navbar({ lang = "en", setLang }) {
           to="/"
           className="flex items-center gap-2 transition-all duration-300 hover:scale-105 hover:drop-shadow"
         >
-          <div className="bg-white/70 backdrop-blur-md p-2 rounded-xl shadow-sm">
-            <img src={ovacareLogoSrc} alt="OvaCare" className="h-10 w-auto object-contain" />
-          </div>
+          <img src={ovacareLogoSrc} alt="OvaCare" className="h-10 w-auto object-contain" />
         </Link>
 
         {/* NAV LINKS */}
