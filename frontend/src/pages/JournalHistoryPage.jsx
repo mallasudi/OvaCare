@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import API from "../utils/api";
@@ -109,7 +109,7 @@ function getEntryInsight(log, repeatedTags = new Set()) {
   return { emotionalState, insight, suggestion, repeated };
 }
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 6;
 
 // Strips HTML tags and decodes entities — handles both plain-text and Quill HTML notes
 function stripHtml(html) {
@@ -123,8 +123,10 @@ function stripHtml(html) {
 export default function JournalHistoryPage() {
   const navigate = useNavigate();
 
-  const [allEntries,      setAllEntries]      = useState([]);
-  const [currentPage,     setCurrentPage]     = useState(1);
+  const [entries,       setEntries]       = useState([]);
+  const [totalPages,    setTotalPages]    = useState(1);
+  const [totalEntries,  setTotalEntries]  = useState(0);
+  const [currentPage,   setCurrentPage]   = useState(1);
   const [selectedEntry,   setSelectedEntry]   = useState(null);
   const [loading,         setLoading]         = useState(false);
   const [fetchError,      setFetchError]      = useState("");
@@ -148,49 +150,26 @@ export default function JournalHistoryPage() {
     setLoading(true);
     setFetchError("");
     try {
-      const { data } = await API.get("/daily-logs/history?limit=500&page=1");
-      setAllEntries(data.entries ?? []);
+      const params = new URLSearchParams({ page: currentPage, limit: PAGE_SIZE });
+      if (fromDate)            params.set("fromDate", fromDate);
+      if (toDate)              params.set("toDate",   toDate);
+      if (moodFilter)          params.set("mood",     moodFilter);
+      if (selectedTags.length) params.set("tags",     selectedTags.join(","));
+      const { data } = await API.get(`/daily-logs/history?${params}`);
+      setEntries(data.entries ?? []);
+      setTotalPages(data.totalPages ?? 1);
+      setTotalEntries(data.totalEntries ?? 0);
     } catch {
       setFetchError("Failed to load journal history. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentPage, fromDate, toDate, moodFilter, selectedTags]);
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
   // Reset to page 1 whenever filters change
   useEffect(() => { setCurrentPage(1); }, [fromDate, toDate, moodFilter, selectedTags]);
-
-  // Valid journal entries: must have actual written notes (handles plain text AND HTML stored notes)
-  const filteredEntries = useMemo(() => {
-    return allEntries.filter((log) => {
-      const plainNotes = stripHtml(log.notes);
-      if (plainNotes.length === 0) return false;
-
-      if (fromDate) {
-        const d = new Date(log.date); d.setHours(0, 0, 0, 0);
-        if (d < new Date(fromDate)) return false;
-      }
-      if (toDate) {
-        const d = new Date(log.date); d.setHours(0, 0, 0, 0);
-        if (d > new Date(toDate)) return false;
-      }
-      if (moodFilter && log.mood !== moodFilter) return false;
-      if (selectedTags.length) {
-        const logTags = log.symptoms ?? [];
-        if (!selectedTags.every((t) => logTags.includes(t))) return false;
-      }
-      return true;
-    });
-  }, [allEntries, fromDate, toDate, moodFilter, selectedTags]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
-
-  const paginatedEntries = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredEntries.slice(start, start + PAGE_SIZE);
-  }, [filteredEntries, currentPage]);
 
   const toggleTag = (label) =>
     setSelectedTags((prev) =>
@@ -202,11 +181,11 @@ export default function JournalHistoryPage() {
     setDeletingId(id);
     try {
       await API.delete(`/journal/${id}`);
-      fetchHistory();
     } catch {
       // silently fail — entry list will remain unchanged
     } finally {
       setDeletingId(null);
+      fetchHistory();
     }
   };
 
@@ -275,7 +254,7 @@ export default function JournalHistoryPage() {
                   Journal History
                 </h1>
                 <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
-                  {filteredEntries.length > 0 ? `${filteredEntries.length} entr${filteredEntries.length === 1 ? "y" : "ies"} found` : "Browse and filter your past entries"}
+                  {totalEntries > 0 ? `${totalEntries} entr${totalEntries === 1 ? "y" : "ies"} found` : "Browse and filter your past entries"}
                 </p>
               </div>
             </motion.div>
@@ -436,7 +415,7 @@ export default function JournalHistoryPage() {
             <span style={{ fontSize: 20 }}>⚠️</span>
             <p className="text-sm font-semibold" style={{ color: "var(--accent)" }}>{fetchError}</p>
           </div>
-        ) : filteredEntries.length === 0 ? (
+        ) : entries.length === 0 ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -464,7 +443,7 @@ export default function JournalHistoryPage() {
           <>
             {/* Cards grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-              {paginatedEntries.map((log, idx) => {
+              {entries.map((log, idx) => {
                 const moodInfo = MOOD_MAP[log.mood];
                 const { emotionalState, insight, suggestion, repeated } =
                   getEntryInsight(log, repeatedTagsSet);
@@ -572,23 +551,41 @@ export default function JournalHistoryPage() {
                         </div>
                       )}
 
-                      {/* Row 4: Notes preview */}
+                      {/* Row 4: Notes preview + image thumbnail */}
                       {(() => {
                         const raw = stripHtml(log.notes || "");
-                        const preview = raw ? (raw.length > 120 ? raw.slice(0, 120) + "…" : raw) : null;
+                        // Extract first image src from notes HTML
+                        const imgMatch = typeof log.notes === "string"
+                          ? log.notes.match(/<img[^>]+src=["']([^"']+)["']/i)
+                          : null;
+                        const thumbSrc = imgMatch?.[1] || null;
+                        const textPreview = raw
+                          ? (raw.length > 100 ? raw.slice(0, 100) + "…" : raw)
+                          : null;
                         return (
-                          <div className="flex-1">
-                            <p
-                              className="text-sm leading-relaxed"
-                              style={{
-                                color: preview ? "var(--text-main)" : "var(--text-muted)",
-                                fontStyle: preview ? "normal" : "italic",
-                                wordBreak: "break-word",
-                                overflowWrap: "break-word",
-                              }}
-                            >
-                              {preview || "No notes written."}
-                            </p>
+                          <div className="flex-1 flex flex-col gap-2">
+                            {thumbSrc && (
+                              <img
+                                src={thumbSrc}
+                                alt="Journal image"
+                                className="rounded-xl object-cover w-full"
+                                style={{ maxHeight: 120, border: "1px solid var(--border-color)" }}
+                                onError={(e) => { e.currentTarget.style.display = "none"; }}
+                              />
+                            )}
+                            {(textPreview || (!thumbSrc)) && (
+                              <p
+                                className="text-sm leading-relaxed"
+                                style={{
+                                  color: textPreview ? "var(--text-main)" : "var(--text-muted)",
+                                  fontStyle: textPreview ? "normal" : "italic",
+                                  wordBreak: "break-word",
+                                  overflowWrap: "break-word",
+                                }}
+                              >
+                                {textPreview || (thumbSrc ? null : "No notes written.")}
+                              </p>
+                            )}
                           </div>
                         );
                       })()}
@@ -867,6 +864,7 @@ export default function JournalHistoryPage() {
         .journal-html-content em { font-style:italic; }
         .journal-html-content blockquote { border-left:3px solid var(--primary); padding-left:0.75em; color:var(--text-muted); margin:0.5em 0; }
         .journal-html-content a { color:var(--accent); text-decoration:underline; }
+        .journal-html-content img { max-width:100%; height:auto; border-radius:12px; margin:0.5em 0; display:block; border:1px solid var(--border-color); box-shadow:0 2px 10px rgba(0,0,0,0.08); }
       `}</style>
     </div>
   );
