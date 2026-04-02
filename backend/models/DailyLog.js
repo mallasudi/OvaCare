@@ -65,6 +65,14 @@ const dailyLogSchema = new mongoose.Schema(
       max: 24,
       default: null,
     },
+    // Distinguishes entries written via the Health Journal from those
+    // written by the Period Tracker. "journal" entries appear in Journal
+    // History; "cycle" entries are used for analytics only.
+    type: {
+      type: String,
+      enum: ["journal", "cycle"],
+      default: "journal",
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

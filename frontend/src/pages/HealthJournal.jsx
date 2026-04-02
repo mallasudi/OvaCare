@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useEffect, useMemo } from "react";
+﻿import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactQuill from "react-quill-new";
 import API from "../utils/api";
@@ -28,21 +28,19 @@ const MOODS = [
   { emoji: "😰", label: "Anxious"  },
 ];
 
-const QUILL_MODULES = {
-  toolbar: [
-    [{ header: [1, 2, 3, false] }],
-    ["bold", "italic", "underline", "strike"],
-    [{ color: [] }, { background: [] }],
-    [{ align: [] }],
-    [{ list: "bullet" }, { list: "ordered" }, "blockquote"],
-    ["link", "clean"],
-  ],
-};
+const QUILL_TOOLBAR_CONTAINER = [
+  [{ header: [1, 2, 3, false] }],
+  ["bold", "italic", "underline", "strike"],
+  [{ color: [] }, { background: [] }],
+  [{ align: [] }],
+  [{ list: "bullet" }, { list: "ordered" }, "blockquote"],
+  ["link", "image", "clean"],
+];
 
 const QUILL_FORMATS = [
   "header", "bold", "italic", "underline", "strike",
   "color", "background", "align",
-  "list", "blockquote", "link",
+  "list", "blockquote", "link", "image",
 ];
 
 // ─── Phase-aware rotating prompts (5 per phase, seed by day-of-year) ──────────
@@ -420,6 +418,50 @@ export default function HealthJournal() {
   const [recentEntries, setRecentEntries] = useState([]);
   const navigate = useNavigate();
 
+  // ── Quill image upload handler ────────────────────────────────────────
+  const quillRef = useRef(null);
+
+  const imageHandler = useCallback(() => {
+    const input = document.createElement("input");
+    input.setAttribute("type", "file");
+    input.setAttribute("accept", "image/*");
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) {
+        setSaveError("Image must be under 5 MB.");
+        setTimeout(() => setSaveError(""), 4000);
+        return;
+      }
+      try {
+        console.log("[IMAGE UPLOAD] Uploading:", file.name, file.type, file.size);
+        const formData = new FormData();
+        formData.append("image", file);
+        // Do NOT set Content-Type manually — axios sets it with the correct
+        // multipart boundary automatically when FormData is passed
+        const { data } = await API.post("/upload", formData);
+        console.log("[IMAGE UPLOAD] Success, url:", data.url);
+        const quill = quillRef.current?.getEditor?.();
+        if (!quill) return;
+        const range = quill.getSelection(true);
+        quill.insertEmbed(range.index, "image", data.url);
+        quill.setSelection(range.index + 1);
+      } catch (err) {
+        console.error("[IMAGE UPLOAD] Error:", err?.response?.data ?? err.message);
+        setSaveError("Image upload failed. Please try again.");
+        setTimeout(() => setSaveError(""), 4000);
+      }
+    });
+    input.click();
+  }, []);
+
+  const quillModules = useMemo(() => ({
+    toolbar: {
+      container: QUILL_TOOLBAR_CONTAINER,
+      handlers: { image: imageHandler },
+    },
+  }), [imageHandler]);
+
   // Derive cycle day from the active (or most recent) cycle
   useEffect(() => {
     API.get("/cycles")
@@ -489,6 +531,7 @@ export default function HealthJournal() {
         mood,
         stress,
         energy,
+        pain,
         sleep: sleepHours,
         water,
         tags,
@@ -547,27 +590,9 @@ export default function HealthJournal() {
       ══════════════════════════════════════════════════════════════════ */}
       <div
         className="w-full relative overflow-hidden"
-        style={{
-          background: "linear-gradient(135deg, var(--bg-main) 0%, #f5ccd6 40%, #f9dde6 70%, var(--bg-main) 100%)",
-          borderBottom: "1.5px solid var(--border-color)",
-        }}
+        style={{ background: "linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)", boxShadow: "0 8px 32px rgba(197,124,138,0.35)" }}
       >
-        {/* Blobs */}
-        {[
-          { top: -60, right: -60, w: 220, h: 220, opacity: 0.22 },
-          { bottom: -40, left: -40, w: 180, h: 180, opacity: 0.14 },
-          { top: 10, left: "42%",  w: 80,  h: 80,  opacity: 0.3  },
-        ].map((b, i) => (
-          <div key={i} style={{
-            position: "absolute",
-            top: b.top, bottom: b.bottom, right: b.right, left: b.left,
-            width: b.w, height: b.h, borderRadius: "50%",
-            background: "var(--primary)",
-            opacity: b.opacity,
-            filter: "blur(32px)",
-            pointerEvents: "none",
-          }} />
-        ))}
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)", backgroundSize: "20px 20px", pointerEvents: "none" }} />
 
         <div className="max-w-7xl mx-auto px-6 sm:px-10 py-10 relative">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
@@ -581,17 +606,16 @@ export default function HealthJournal() {
                 className="flex items-center justify-center rounded-2xl flex-shrink-0"
                 style={{
                   width: 56, height: 56, fontSize: 28,
-                  background: "rgba(255,255,255,0.65)",
-                  border: "1.5px solid var(--border-color)",
+                  background: "rgba(255,255,255,0.18)",
+                  border: "1.5px solid rgba(255,255,255,0.3)",
                   backdropFilter: "blur(8px)",
-                  boxShadow: "0 4px 16px rgba(115,44,63,0.15)",
                 }}
               >📔</div>
               <div>
-                <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: "var(--accent)" }}>
+                <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: "white" }}>
                   Daily Journal
                 </h1>
-                <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
+                <p className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>
                   Your private space — no filters, no judgment.
                 </p>
               </div>
@@ -606,11 +630,10 @@ export default function HealthJournal() {
               <div
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-semibold"
                 style={{
-                  background: "rgba(255,255,255,0.6)",
-                  color: "var(--accent)",
-                  border: "1.5px solid var(--border-color)",
+                  background: "rgba(255,255,255,0.18)",
+                  color: "white",
+                  border: "1.5px solid rgba(255,255,255,0.3)",
                   backdropFilter: "blur(8px)",
-                  boxShadow: "0 2px 10px rgba(115,44,63,0.09)",
                 }}
               >
                 🗓️ {todayLabel()}
@@ -623,9 +646,10 @@ export default function HealthJournal() {
                   <div
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold"
                     style={{
-                      background: ph.badgeBg,
-                      color: ph.badgeColor,
-                      border: `1.5px solid ${ph.border}`,
+                      background: "rgba(255,255,255,0.18)",
+                      color: "white",
+                      border: "1.5px solid rgba(255,255,255,0.3)",
+                      backdropFilter: "blur(8px)",
                     }}
                   >
                     {ph.emoji} {ph.phase} · Day {cycleDay}
@@ -637,9 +661,9 @@ export default function HealthJournal() {
                 <div
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold"
                   style={{
-                    background: "rgba(255,178,0,0.15)",
-                    color: "#b45309",
-                    border: "1.5px solid rgba(255,178,0,0.35)",
+                    background: "rgba(255,255,255,0.18)",
+                    color: "white",
+                    border: "1.5px solid rgba(255,255,255,0.3)",
                     backdropFilter: "blur(8px)",
                   }}
                 >
@@ -650,9 +674,9 @@ export default function HealthJournal() {
                 <div
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-bold"
                   style={{
-                    background: "rgba(197,124,138,0.12)",
-                    color: "var(--accent)",
-                    border: "1.5px solid var(--border-color)",
+                    background: "rgba(255,255,255,0.18)",
+                    color: "white",
+                    border: "1.5px solid rgba(255,255,255,0.3)",
                     backdropFilter: "blur(8px)",
                   }}
                 >
@@ -664,11 +688,10 @@ export default function HealthJournal() {
                 onClick={() => navigate("/journal/history")}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all duration-150"
                 style={{
-                  background: "rgba(255,255,255,0.6)",
-                  color: "var(--accent)",
-                  border: "1.5px solid var(--border-color)",
+                  background: "rgba(255,255,255,0.18)",
+                  color: "white",
+                  border: "1.5px solid rgba(255,255,255,0.3)",
                   backdropFilter: "blur(8px)",
-                  boxShadow: "0 2px 10px rgba(115,44,63,0.09)",
                 }}
               >
                 📚 View History
@@ -831,10 +854,11 @@ export default function HealthJournal() {
 
               <div className="quill-journal-wrapper">
                 <ReactQuill
+                  ref={quillRef}
                   theme="snow"
                   value={content}
                   onChange={setContent}
-                  modules={QUILL_MODULES}
+                  modules={quillModules}
                   formats={QUILL_FORMATS}
                   placeholder="Start writing… even one sentence is enough."
                 />
