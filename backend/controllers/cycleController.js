@@ -7,7 +7,7 @@ const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 function dayOnly(d) {
   const dt = new Date(d);
-  dt.setUTCHours(0, 0, 0, 0);
+  dt.setHours(0, 0, 0, 0);
   return dt;
 }
 
@@ -50,6 +50,7 @@ export const createCycle = async (req, res) => {
           $set: {
             user_id: req.user.userId,
             date: d,
+            type: "cycle",
             ...(mood         !== undefined && { mood }),
             ...(symptoms     !== undefined && { symptoms }),
             ...(energy_level !== undefined && energy_level !== null && { energy_level }),
@@ -313,6 +314,7 @@ export const logDaily = async (req, res) => {
     const logUpdate = {
       user_id: req.user.userId,
       date:    logDate,
+      type:    "cycle",
       ...(isBleedingEntry                                    && { flow_intensity }),
       ...(on_period        !== undefined && on_period !== null && { on_period }),
       ...(mood             !== undefined                       && { mood }),
@@ -522,6 +524,26 @@ function computeCycleHealthScore({
 -----------------------------------------
 */
 export const getCycleAnalytics = async (req, res) => {
+  // ── Fertility probability helper ─────────────────────────────────────────
+  // Builds a day-by-day array from fertileStart to fertileEnd with
+  // evidence-based relative fertility probabilities.
+  const buildFertileDays = (ovulationDate, fertileWindowStart, fertileWindowEnd) => {
+    const PROB_BY_OFFSET = { "-5": 10, "-4": 16, "-3": 20, "-2": 28, "-1": 31, 0: 33, 1: 12 };
+    const days = [];
+    const cur = new Date(fertileWindowStart);
+    while (cur <= fertileWindowEnd) {
+      const offset = Math.round((cur - ovulationDate) / MS_PER_DAY);
+      const prob = PROB_BY_OFFSET[offset] ?? 5;
+      days.push({
+        date: cur.toISOString().split("T")[0],
+        probability: prob,
+        type: offset === 0 ? "ovulation" : prob >= 28 ? "high" : "low",
+      });
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days;
+  };
+
   try {
     const cycles = await Cycle.find({ user_id: req.user.userId }).sort({ period_start: 1 });
     const total_cycles_count = cycles.length;
@@ -533,6 +555,8 @@ export const getCycleAnalytics = async (req, res) => {
     if (total_cycles_count === 0) {
       return res.status(200).json({
         total_cycles_count:       0,
+        enoughCycleData:          false,
+        fertileDays:              [],
         message:                  "No cycle data yet.",
         average_cycle_length:     null,
         predicted_next_period:    null,
@@ -586,6 +610,8 @@ export const getCycleAnalytics = async (req, res) => {
 
       return res.status(200).json({
         total_cycles_count,
+        enoughCycleData:          false,
+        fertileDays:              buildFertileDays(predictedOvulation, fertileStart, fertileEnd),
         average_cycle_length:     DEFAULT_CYCLE_LENGTH,  // assumed — no real gap data yet
         average_bleeding_duration,
         predicted_next_period:    predictedNext,
@@ -1201,6 +1227,8 @@ export const getCycleAnalytics = async (req, res) => {
 
     res.status(200).json({
       total_cycles_count,
+      enoughCycleData:          total_cycles_count >= 2,
+      fertileDays:              buildFertileDays(predicted_ovulation_date, fertile_window_start, fertile_window_end),
       average_cycle_length,
       cycle_variability,
       average_bleeding_duration,
