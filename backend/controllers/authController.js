@@ -1,20 +1,10 @@
 import User from "../models/User.js";
 import OtpModel from "../models/Otp.js";
+import Notification from "../models/Notification.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { Resend } from "resend";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-async function sendEmail({ to, subject, html }) {
-  const { error } = await resend.emails.send({
-    from: "OvaCare <onboarding@resend.dev>",
-    to,
-    subject,
-    html,
-  });
-  if (error) throw new Error(error.message);
-}
+import { sendOtpEmail, sendEmail, sendPasswordResetEmail } from "../services/mailService.js";
+import { getSettings } from "../services/settingsService.js";
 
 /* REGISTER */
 export const register = async (req, res) => {
@@ -76,42 +66,37 @@ export const register = async (req, res) => {
   }
 };
 
-/* SEND OTP */
+/* SEND OTP (email-only step, account created separately via /register) */
 export const sendOtp = async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ message: "Email is required" });
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ message: "A valid email is required" });
+    }
 
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ message: "User already exists with this email" });
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresMins = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
+    const expiresAt = new Date(Date.now() + expiresMins * 60 * 1000);
 
-    // Remove any previous OTP for this email
-    await OtpModel.deleteMany({ email });
-    await OtpModel.create({ email, otp });
+    await OtpModel.findOneAndUpdate(
+      { email },
+      { otp, expiresAt, fullName: null, password: null, age: null, contactNumber: null },
+      { upsert: true, new: true }
+    );
 
-    await sendEmail({
-      to: email,
-      subject: "Your OvaCare Verification Code",
-      html: `
-        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #f0d0d8;border-radius:16px">
-          <h2 style="color:#b05070">OvaCare 🌸 Email Verification</h2>
-          <p style="color:#555">Use the code below to verify your email address. It expires in <strong>10 minutes</strong>.</p>
-          <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#b05070;text-align:center;padding:24px 0">${otp}</div>
-          <p style="color:#999;font-size:12px">If you did not request this, please ignore this email.</p>
-        </div>
-      `,
-    });
+    await sendOtpEmail({ to: email, otp });
 
     res.json({ message: "OTP sent successfully" });
   } catch (err) {
-    console.error("sendOtp error:", err);
-    res.status(500).json({ message: "Failed to send OTP. Please try again." });
+    console.error("sendOtp error:", err.message);
+    res.status(500).json({ message: `Failed to send OTP: ${err.message}` });
   }
 };
 
-/* VERIFY OTP */
+/* VERIFY OTP (email-only step, account created separately via /register) */
 export const verifyOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -119,31 +104,135 @@ export const verifyOtp = async (req, res) => {
 
     const record = await OtpModel.findOne({ email });
     if (!record) return res.status(400).json({ message: "OTP expired or not found. Please request a new one." });
+    if (record.expiresAt < new Date()) {
+      await OtpModel.deleteOne({ email });
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
     if (record.otp !== otp.trim()) return res.status(400).json({ message: "Invalid OTP. Please try again." });
 
-    await OtpModel.deleteMany({ email });
-
-    // Send verification success email
-    try {
-      await sendEmail({
-        to: email,
-        subject: "Email Verified Successfully – OvaCare 🌸",
-        html: `
-          <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;border:1px solid #f0d0d8;border-radius:16px">
-            <h2 style="color:#b05070">OvaCare 🌸</h2>
-            <h3 style="color:#333">Your email has been verified!</h3>
-            <p style="color:#555">You're all set. Your OvaCare account is being created now.</p>
-            <p style="color:#999;font-size:12px">If you did not request this, please contact us immediately.</p>
-          </div>
-        `,
-      });
-    } catch (mailErr) {
-      console.error("verifyOtp confirmation email error:", mailErr);
-    }
+    await OtpModel.deleteOne({ email });
 
     res.json({ message: "OTP verified successfully" });
   } catch (err) {
+    console.error("verifyOtp error:", err.message);
     res.status(500).json({ message: "OTP verification failed" });
+  }
+};
+
+/* SEND REGISTER OTP (validates all fields, stores data, sends OTP) */
+export const sendRegisterOtp = async (req, res) => {
+  try {
+    const { fullName, email, password, age, contactNumber } = req.body;
+
+    // Field validation
+    if (!fullName || !fullName.trim()) return res.status(400).json({ message: "Full name is required" });
+    if (!email || !email.includes("@")) return res.status(400).json({ message: "A valid email address is required" });
+    if (!password || password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
+    if (!age || isNaN(age) || Number(age) < 10 || Number(age) > 100) return res.status(400).json({ message: "Enter a valid age between 10 and 100" });
+    if (!/^\d{10}$/.test(contactNumber)) return res.status(400).json({ message: "Contact number must be exactly 10 digits" });
+
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ message: "An account with this email already exists" });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresMins = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
+    const expiresAt = new Date(Date.now() + expiresMins * 60 * 1000);
+
+    // Upsert OTP record with all registration data (password stored plaintext – deleted on use)
+    await OtpModel.findOneAndUpdate(
+      { email },
+      { otp, expiresAt, fullName: fullName.trim(), password, age: Number(age), contactNumber },
+      { upsert: true, new: true }
+    );
+
+    await sendOtpEmail({ to: email, otp });
+
+    res.json({ message: "OTP sent to your email. Please verify to complete registration." });
+  } catch (err) {
+    console.error("sendRegisterOtp error:", err.message);
+    res.status(500).json({ message: `Failed to send OTP: ${err.message}` });
+  }
+};
+
+/* VERIFY REGISTER OTP AND CREATE ACCOUNT */
+export const verifyRegisterOtpAndCreateAccount = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) return res.status(400).json({ message: "Email and OTP are required" });
+
+    const record = await OtpModel.findOne({ email });
+    if (!record) return res.status(400).json({ message: "OTP expired or not found. Please request a new one." });
+
+    if (record.expiresAt < new Date()) {
+      await OtpModel.deleteOne({ email });
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    if (record.otp !== otp.trim()) return res.status(400).json({ message: "Invalid OTP. Please try again." });
+
+    // Ensure registration data is present (this OTP was sent via sendRegisterOtp)
+    if (!record.fullName || !record.password) {
+      return res.status(400).json({ message: "Registration data not found. Please start over." });
+    }
+
+    const hashedPassword = await bcrypt.hash(record.password, 10);
+
+    const user = await User.create({
+      name: record.fullName,
+      email,
+      password: hashedPassword,
+      age: record.age,
+      contactNumber: record.contactNumber,
+    });
+
+    // Clean up OTP
+    await OtpModel.deleteOne({ email });
+
+    // New user alert notification (if setting enabled)
+    try {
+      const settings = await getSettings();
+      if (settings.newUserAlert) {
+        await Notification.create({
+          title:   "New User Registered",
+          message: `${user.name} (${user.email}) has created a new account.`,
+          type:    "info",
+          audience: "admin",
+          sentBy:  "System",
+        });
+      }
+    } catch (notifErr) {
+      console.error("New user notification error:", notifErr.message);
+    }
+
+    // Send welcome email (non-blocking)
+    sendEmail({
+      to: email,
+      subject: "Welcome to OvaCare 🌸",
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
+                    border:1px solid #f0d0d8;border-radius:16px;background:#fffafb">
+          <h2 style="color:#b05070;margin-top:0">Welcome to OvaCare, ${user.name}! 🌸</h2>
+          <p style="color:#555">Your account has been created successfully. We're so glad to have you!</p>
+          <div style="margin:20px 0;padding:16px;background:#fdf0f4;border-radius:12px">
+            <p style="color:#b05070;margin:0 0 8px;font-weight:bold">What you can do next:</p>
+            <ul style="color:#555;margin:0;padding-left:20px">
+              <li>Take your PCOS risk assessment</li>
+              <li>Track your menstrual cycle</li>
+              <li>Log daily symptoms &amp; moods</li>
+              <li>Connect with a doctor</li>
+            </ul>
+          </div>
+          <p style="color:#999;font-size:12px;margin-bottom:0">This is an automated message. Please do not reply.</p>
+        </div>`,
+    }).catch((err) => console.error("Welcome email error:", err.message));
+
+    res.status(201).json({
+      message: "Account created successfully",
+      user: { id: user._id, name: user.name, email: user.email },
+    });
+  } catch (err) {
+    console.error("verifyRegisterOtpAndCreateAccount error:", err.message);
+    res.status(500).json({ message: "Account creation failed. Please try again." });
   }
 };
 
@@ -307,5 +396,80 @@ export const uploadProfilePicture = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: "Failed to upload profile picture" });
+  }
+};
+
+/* FORGOT PASSWORD — sends a 6-digit OTP to the user's email */
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ message: "A valid email address is required" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) {
+      // Return the same message to avoid email enumeration
+      return res.json({ message: "If that email is registered, an OTP has been sent." });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = await bcrypt.hash(otp, 10);
+    const expiresMins = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
+    const expiresAt = new Date(Date.now() + expiresMins * 60 * 1000);
+
+    await OtpModel.findOneAndUpdate(
+      { email: email.toLowerCase().trim(), purpose: "password_reset" },
+      { otp: hashedOtp, expiresAt },
+      { upsert: true, new: true }
+    );
+
+    await sendPasswordResetEmail({ to: email, otp });
+    res.json({ message: "If that email is registered, an OTP has been sent." });
+  } catch (err) {
+    console.error("[FORGOT PASSWORD]", err.message);
+    res.status(500).json({ message: "Failed to send OTP. Please try again." });
+  }
+};
+
+/* RESET PASSWORD — verifies OTP, updates password */
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: "Email, OTP, and new password are required" });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
+    }
+
+    const record = await OtpModel.findOne({
+      email: email.toLowerCase().trim(),
+      purpose: "password_reset",
+    });
+    if (!record) {
+      return res.status(400).json({ message: "OTP expired or not found. Please request a new one." });
+    }
+    if (record.expiresAt < new Date()) {
+      await OtpModel.deleteOne({ _id: record._id });
+      return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+    }
+
+    const otpMatch = await bcrypt.compare(otp.trim(), record.otp);
+    if (!otpMatch) {
+      return res.status(400).json({ message: "Invalid OTP. Please try again." });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+    await OtpModel.deleteOne({ _id: record._id });
+
+    res.json({ message: "Password reset successful. You can now log in." });
+  } catch (err) {
+    console.error("[RESET PASSWORD]", err.message);
+    res.status(500).json({ message: "Failed to reset password. Please try again." });
   }
 };
