@@ -9,6 +9,7 @@ import { Doughnut, Line, Bar } from "react-chartjs-2";
 import { motion } from "framer-motion";
 import api from "../api.js";
 import Topbar from "../components/Topbar.jsx";
+import AgeDistributionChart from "../components/AgeDistributionChart.jsx";
 
 ChartJS.register(
   ArcElement, Tooltip, Legend, DoughnutController,
@@ -236,6 +237,9 @@ export default function Dashboard() {
                 </div>
               )}
             </PanelCard>
+          </div>
+          <div className="mt-5">
+            <AgeDistributionChart />
           </div>
         </div>
 
