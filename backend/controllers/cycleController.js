@@ -7,7 +7,7 @@ const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 function dayOnly(d) {
   const dt = new Date(d);
-  dt.setHours(0, 0, 0, 0);
+  dt.setUTCHours(0, 0, 0, 0);
   return dt;
 }
 
@@ -549,7 +549,7 @@ export const getCycleAnalytics = async (req, res) => {
     const total_cycles_count = cycles.length;
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     // ── 0 cycles ──────────────────────────────────────────────────────────────
     if (total_cycles_count === 0) {

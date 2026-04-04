@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import ovacareLogoSrc from "../assets/images/OvaCare LOGO.png";
+
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import ProfileDropdown from "../components/ProfileDropdown";
@@ -426,7 +426,11 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
-    API.get("/analytics/dashboard")
+    const todayLocal = new Date();
+    const yyyy = todayLocal.getFullYear();
+    const mm   = String(todayLocal.getMonth() + 1).padStart(2, "0");
+    const dd   = String(todayLocal.getDate()).padStart(2, "0");
+    API.get(`/analytics/dashboard?today=${yyyy}-${mm}-${dd}`)
       .then((res) => setDashboardData(res.data))
       .catch(() => setDashboardData(null))
       .finally(() => setLoading(false));
@@ -524,7 +528,6 @@ export default function Dashboard() {
           <div className="flex items-center justify-between gap-6 py-6">
             {/* Left: logo vertically centered with welcome text */}
             <div className="flex items-center gap-5 min-w-0">
-              <img src={ovacareLogoSrc} alt="OvaCare" className="h-14 w-auto object-contain flex-shrink-0" style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.25))" }} />
               <div className="min-w-0">
                 <h2 className="text-2xl lg:text-3xl font-extrabold leading-snug" style={{ color: "white", letterSpacing: "0.01em" }}>
                   Welcome back, <span style={{ color: "rgba(255,255,255,0.8)" }}>{user?.name?.split(" ")[0]}</span> 💖

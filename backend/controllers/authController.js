@@ -26,6 +26,19 @@ export const register = async (req, res) => {
       contactNumber: contactNumber || "",
     });
 
+    // Notify admin of new registration
+    try {
+      await Notification.create({
+        title:    "New User Registered",
+        message:  `${name} (${email}) just created an account.`,
+        type:     "info",
+        audience: "admin",
+        sentBy:   "System",
+      });
+    } catch (notifErr) {
+      console.error("Admin notification error:", notifErr);
+    }
+
     // Send welcome email
     try {
       await sendEmail({

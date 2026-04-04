@@ -30,7 +30,7 @@ const STRESS_CHART_VAL = { Low: 2, Medium: 3, High: 5 };
 
 function toDay(d) {
   const dt = new Date(d);
-  dt.setHours(0, 0, 0, 0);
+  dt.setUTCHours(0, 0, 0, 0);
   return dt;
 }
 
@@ -278,15 +278,15 @@ const buildFertilityChart = (ovulationDate, fertileStart, fertileEnd) => {
     labels.push(cur.toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
     values.push(prob);
     types.push(offset === 0 ? "ovulation" : prob >= 28 ? "high" : "low");
-    cur.setDate(cur.getDate() + 1);
+    cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return { labels, values, types };
 };
 
-const determineCyclePhase = (avgCycleLen, nextPeriodDate, periodEnd) => {
+const determineCyclePhase = (avgCycleLen, nextPeriodDate, periodEnd, todayDate) => {
   if (!nextPeriodDate) return null;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const next  = new Date(nextPeriodDate); next.setHours(0, 0, 0, 0);
+  const today = todayDate ? new Date(todayDate) : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
+  const next  = new Date(nextPeriodDate); next.setUTCHours(0, 0, 0, 0);
   const daysUntilNext = Math.round((next - today) / MS_PER_DAY);
   const cycleLen      = avgCycleLen || 28;
   const dayInCycle    = cycleLen - daysUntilNext;
@@ -294,7 +294,7 @@ const determineCyclePhase = (avgCycleLen, nextPeriodDate, periodEnd) => {
   if (dayInCycle <= 5) {
     // If period has already ended, advance phase to follicular
     if (periodEnd) {
-      const end = new Date(periodEnd); end.setHours(0, 0, 0, 0);
+      const end = new Date(periodEnd); end.setUTCHours(0, 0, 0, 0);
       if (today > end) return "follicular";
     }
     return "menstrual";
@@ -571,23 +571,27 @@ const buildRecommendations = (phase, vitals) => {
 */
 export const getDashboardAnalytics = async (req, res) => {
   try {
-    // Use local midnight so date comparisons match the server's local timezone
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    // Use the client's local date (sent as ?today=YYYY-MM-DD) so users in any
+    // timezone get correct streak / window calculations.
+    const todayParam = req.query.today; // "YYYY-MM-DD" from client
+    const now = todayParam ? new Date(`${todayParam}T00:00:00.000Z`) : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
 
     const from = new Date(now);
-    from.setDate(from.getDate() - 6);
+    from.setUTCDate(from.getUTCDate() - 6);
 
     const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
+    endOfToday.setUTCHours(23, 59, 59, 999);
 
     const streakFrom = new Date(now);
-    streakFrom.setDate(streakFrom.getDate() - 29);
+    streakFrom.setUTCDate(streakFrom.getUTCDate() - 29);
 
-    // Local "YYYY-MM-DD" helper
+    // "YYYY-MM-DD" helper — rounds to nearest UTC midnight so legacy entries
+    // saved with local-midnight offset (e.g. 18:30 UTC on IST server) are
+    // mapped to the correct calendar day for any user timezone.
     const localStr = (d) => {
-      const dt = new Date(d);
-      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+      const ms = new Date(d).getTime();
+      const dt = new Date(Math.round(ms / 86400000) * 86400000);
+      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
     };
 
     // ── Parallel data fetch ────────────────────────────────────────────────────
@@ -604,7 +608,7 @@ export const getDashboardAnalytics = async (req, res) => {
     const week = [];
     for (let i = 0; i < 7; i++) {
       const d  = new Date(now);
-      d.setDate(d.getDate() - i);
+      d.setUTCDate(d.getUTCDate() - i);
       const ds  = localStr(d);
       const log = logs.find((l) => localStr(l.date) === ds) ?? null;
 
@@ -655,7 +659,7 @@ export const getDashboardAnalytics = async (req, res) => {
     const streakStart  = loggedDateSet.has(todayDateStr) ? 0 : 1; // skip today if not logged yet
     for (let i = streakStart; i <= 29; i++) {
       const d = new Date(now);
-      d.setDate(d.getDate() - i);
+      d.setUTCDate(d.getUTCDate() - i);
       if (loggedDateSet.has(localStr(d))) streak++;
       else break;
     }
@@ -778,14 +782,13 @@ export const getDashboardAnalytics = async (req, res) => {
       const latestCycle   = cycles[cycles.length - 1];
       const latestStart   = new Date(latestCycle.period_start);
       const predictedNext = new Date(latestStart);
-      predictedNext.setDate(predictedNext.getDate() + avgCycleLength);
+      predictedNext.setUTCDate(predictedNext.getUTCDate() + avgCycleLength);
       const predictedOvulation = new Date(predictedNext);
-      predictedOvulation.setDate(predictedOvulation.getDate() - 14);
-      const fStart = new Date(predictedOvulation); fStart.setDate(fStart.getDate() - 5);
-      const fEnd   = new Date(predictedOvulation); fEnd.setDate(fEnd.getDate() + 1);
-      const today2 = new Date(); today2.setUTCHours(0, 0, 0, 0);
-      const daysToPeriod = Math.round((predictedNext - today2) / MS_PER_DAY);
-      const phase        = determineCyclePhase(avgCycleLength, predictedNext, latestCycle.period_end);
+      predictedOvulation.setUTCDate(predictedOvulation.getUTCDate() - 14);
+      const fStart = new Date(predictedOvulation); fStart.setUTCDate(fStart.getUTCDate() - 5);
+      const fEnd   = new Date(predictedOvulation); fEnd.setUTCDate(fEnd.getUTCDate() + 1);
+      const daysToPeriod = Math.round((predictedNext - now) / MS_PER_DAY);
+      const phase        = determineCyclePhase(avgCycleLength, predictedNext, latestCycle.period_end, now);
       cycleInsights = {
         enoughCycleData, totalCycles, phase,
         nextPeriod:    predictedNext.toISOString().split("T")[0],
@@ -811,7 +814,7 @@ export const getDashboardAnalytics = async (req, res) => {
       const latestCycleItem = cycles[cycles.length - 1];
       const cycleLen        = cycleInsights.avgCycleLength || 28;
       const cycleStartDate  = new Date(latestCycleItem.period_start);
-      cycleStartDate.setHours(0, 0, 0, 0);
+      cycleStartDate.setUTCHours(0, 0, 0, 0);
       const ovulationDay    = Math.max(1, cycleLen - 14);
 
       const cyclePeriodLogs = await DailyLog.find({
@@ -819,12 +822,12 @@ export const getDashboardAnalytics = async (req, res) => {
         date: { $gte: cycleStartDate, $lte: endOfToday },
       }).lean();
 
-      const today3 = new Date(); today3.setHours(0, 0, 0, 0);
+      const today3 = new Date(); today3.setUTCHours(0, 0, 0, 0);
       cycleTrend   = [];
 
       for (let d = 1; d <= cycleLen; d++) {
         const date = new Date(cycleStartDate);
-        date.setDate(date.getDate() + d - 1);
+        date.setUTCDate(date.getUTCDate() + d - 1);
         const dateStr = localStr(date);
         const log     = cyclePeriodLogs.find((l) => localStr(l.date) === dateStr) ?? null;
 
@@ -928,12 +931,15 @@ export const getCycleTrend = async (req, res) => {
 
     const latestCycle    = cycles[cycles.length - 1];
     const cycleStartDate = new Date(latestCycle.period_start);
-    cycleStartDate.setHours(0, 0, 0, 0);
+    cycleStartDate.setUTCHours(0, 0, 0, 0);
     const ovulationDay = Math.max(1, avgCycleLength - 14);
-    const endOfToday   = new Date(); endOfToday.setHours(23, 59, 59, 999);
+    const todayParam2  = req.query.today;
+    const today        = todayParam2 ? new Date(`${todayParam2}T00:00:00.000Z`) : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
+    const endOfToday   = new Date(today); endOfToday.setUTCHours(23, 59, 59, 999);
 
     const utcStr = (d) => {
-      const dt = new Date(d);
+      const ms = new Date(d).getTime();
+      const dt = new Date(Math.round(ms / 86400000) * 86400000);
       return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
     };
 
@@ -942,12 +948,11 @@ export const getCycleTrend = async (req, res) => {
       date: { $gte: cycleStartDate, $lte: endOfToday },
     }).lean();
 
-    const today = new Date(); today.setHours(0, 0, 0, 0);
     const days  = [];
 
     for (let d = 1; d <= avgCycleLength; d++) {
       const date = new Date(cycleStartDate);
-      date.setDate(date.getDate() + d - 1);
+      date.setUTCDate(date.getUTCDate() + d - 1);
       const log = cycleLogs.find((l) => utcStr(l.date) === utcStr(date)) ?? null;
 
       let phase;
@@ -991,12 +996,14 @@ export const getCycleTrend = async (req, res) => {
 */
 export const getWellnessTrend = async (req, res) => {
   try {
-    const now  = new Date(); now.setHours(0, 0, 0, 0);
-    const from = new Date(now); from.setDate(from.getDate() - 6);
-    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+    const todayParam = req.query.today;
+    const now  = todayParam ? new Date(`${todayParam}T00:00:00.000Z`) : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
+    const from = new Date(now); from.setUTCDate(from.getUTCDate() - 6);
+    const endOfToday = new Date(now); endOfToday.setUTCHours(23, 59, 59, 999);
 
     const utcStr = (d) => {
-      const dt = new Date(d);
+      const ms = new Date(d).getTime();
+      const dt = new Date(Math.round(ms / 86400000) * 86400000);
       return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
     };
 
@@ -1010,7 +1017,7 @@ export const getWellnessTrend = async (req, res) => {
     const mood   = [];
 
     for (let i = 6; i >= 0; i--) {
-      const d  = new Date(now); d.setDate(d.getDate() - i);
+      const d  = new Date(now); d.setUTCDate(d.getUTCDate() - i);
       const ds = utcStr(d);
       const log = logs.find((l) => utcStr(l.date) === ds) ?? null;
 
@@ -1047,12 +1054,14 @@ export const getWellnessTrend = async (req, res) => {
 */
 export const getSleepStress = async (req, res) => {
   try {
-    const now  = new Date(); now.setHours(0, 0, 0, 0);
-    const from = new Date(now); from.setDate(from.getDate() - 6);
-    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+    const todayParam = req.query.today;
+    const now  = todayParam ? new Date(`${todayParam}T00:00:00.000Z`) : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
+    const from = new Date(now); from.setUTCDate(from.getUTCDate() - 6);
+    const endOfToday = new Date(now); endOfToday.setUTCHours(23, 59, 59, 999);
 
     const utcStr = (d) => {
-      const dt = new Date(d);
+      const ms = new Date(d).getTime();
+      const dt = new Date(Math.round(ms / 86400000) * 86400000);
       return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
     };
 
@@ -1067,7 +1076,7 @@ export const getSleepStress = async (req, res) => {
     const stress   = [];
 
     for (let i = 6; i >= 0; i--) {
-      const d  = new Date(now); d.setDate(d.getDate() - i);
+      const d  = new Date(now); d.setUTCDate(d.getUTCDate() - i);
       const ds = utcStr(d);
       const log = logs.find((l) => utcStr(l.date) === ds) ?? null;
 
@@ -1102,9 +1111,10 @@ export const getSleepStress = async (req, res) => {
 */
 export const getTopSymptoms = async (req, res) => {
   try {
-    const now  = new Date(); now.setHours(0, 0, 0, 0);
-    const from = new Date(now); from.setDate(from.getDate() - 29);
-    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+    const todayParam = req.query.today;
+    const now  = todayParam ? new Date(`${todayParam}T00:00:00.000Z`) : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
+    const from = new Date(now); from.setUTCDate(from.getUTCDate() - 29);
+    const endOfToday = new Date(now); endOfToday.setUTCHours(23, 59, 59, 999);
 
     const logs = await DailyLog.find({
       user_id: req.user.userId,
@@ -1151,12 +1161,14 @@ export const getTopSymptoms = async (req, res) => {
 */
 export const getHealthInsights = async (req, res) => {
   try {
-    const now  = new Date(); now.setHours(0, 0, 0, 0);
-    const from = new Date(now); from.setDate(from.getDate() - 6);
-    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+    const todayParam = req.query.today;
+    const now  = todayParam ? new Date(`${todayParam}T00:00:00.000Z`) : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
+    const from = new Date(now); from.setUTCDate(from.getUTCDate() - 6);
+    const endOfToday = new Date(now); endOfToday.setUTCHours(23, 59, 59, 999);
 
     const utcStr = (d) => {
-      const dt = new Date(d);
+      const ms = new Date(d).getTime();
+      const dt = new Date(Math.round(ms / 86400000) * 86400000);
       return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
     };
 
@@ -1168,7 +1180,7 @@ export const getHealthInsights = async (req, res) => {
 
     const week = [];
     for (let i = 6; i >= 0; i--) {
-      const d   = new Date(now); d.setDate(d.getDate() - i);
+      const d   = new Date(now); d.setUTCDate(d.getUTCDate() - i);
       const ds  = utcStr(d);
       const log = logs.find((l) => utcStr(l.date) === ds) ?? null;
       if (log) {
@@ -1229,7 +1241,7 @@ export const getHealthInsights = async (req, res) => {
       }
       const latestStart   = new Date(cycles[cycles.length - 1].period_start);
       const predictedNext = new Date(latestStart);
-      predictedNext.setDate(predictedNext.getDate() + avgCycleLength);
+      predictedNext.setUTCDate(predictedNext.getUTCDate() + avgCycleLength);
       cyclePhase = determineCyclePhase(avgCycleLength, predictedNext);
     }
 

@@ -416,6 +416,7 @@ export default function HealthJournal() {
   const [journalMode,   setJournalMode]   = useState("free");
   const [reflection,    setReflection]    = useState(null);
   const [recentEntries, setRecentEntries] = useState([]);
+  const [backendStreak, setBackendStreak] = useState(null);
   const navigate = useNavigate();
 
   // ── Quill image upload handler ────────────────────────────────────────
@@ -483,7 +484,9 @@ export default function HealthJournal() {
 
   // Load today's journal entry on mount to pre-populate the form
   useEffect(() => {
-    API.get("/journal/today")
+    const _t = new Date();
+    const todayStr = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,"0")}-${String(_t.getDate()).padStart(2,"0")}`;
+    API.get(`/journal/today?today=${todayStr}`)
       .then(({ data }) => {
         const log = data.log;
         if (!log) return;
@@ -506,6 +509,14 @@ export default function HealthJournal() {
     API.get("/daily-logs/history?limit=30&page=1")
       .then(({ data }) => setRecentEntries(data.entries || []))
       .catch(() => {});
+    // Fetch streak from analytics (counts ALL log entries, not just journal text)
+    const todayLocal = new Date();
+    const yyyy = todayLocal.getFullYear();
+    const mm   = String(todayLocal.getMonth() + 1).padStart(2, "0");
+    const dd   = String(todayLocal.getDate()).padStart(2, "0");
+    API.get(`/analytics/dashboard?today=${yyyy}-${mm}-${dd}`)
+      .then(({ data }) => setBackendStreak(data?.journalInsights?.streak ?? null))
+      .catch(() => {});
   }, []);
 
   const toggleTag = useCallback((label) => {
@@ -525,7 +536,10 @@ export default function HealthJournal() {
     setSaveError("");
     setSubmitting(true);
     try {
+      const _t = new Date();
+      const todayStr = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,"0")}-${String(_t.getDate()).padStart(2,"0")}`;
       const { data } = await API.post("/journal", {
+        today: todayStr,
         notes: content,
         win: win.trim(),
         mood,
@@ -559,12 +573,10 @@ export default function HealthJournal() {
 
   // ── Computed intelligence ─────────────────────────────────────────────
   const streakData = useMemo(() => {
-    const streak = calculateStreak(recentEntries);
+    const streak = backendStreak ?? calculateStreak(recentEntries);
     const weekEntries = getWeekEntries(recentEntries);
-    console.log("All entries:", recentEntries);
-    console.log("Week entries:", weekEntries);
     return { streak, thisWeek: weekEntries.length };
-  }, [recentEntries]);
+  }, [recentEntries, backendStreak]);
 
   const dynamicPrompt = useMemo(() => {
     const phase = getCyclePhase(cycleDay);

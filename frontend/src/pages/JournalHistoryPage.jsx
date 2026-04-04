@@ -213,23 +213,9 @@ export default function JournalHistoryPage() {
       {/* ── Hero Banner ──────────────────────────────────────────────────── */}
       <div
         className="w-full relative overflow-hidden"
-        style={{
-          background: "linear-gradient(135deg, var(--bg-main) 0%, #f5ccd6 40%, #f9dde6 70%, var(--bg-main) 100%)",
-          borderBottom: "1.5px solid var(--border-color)",
-        }}
+        style={{ background: "linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)", boxShadow: "0 8px 32px rgba(197,124,138,0.35)" }}
       >
-        {[
-          { top: -60, right: -60, w: 220, h: 220, opacity: 0.22 },
-          { bottom: -40, left: -40, w: 180, h: 180, opacity: 0.14 },
-        ].map((b, i) => (
-          <div key={i} style={{
-            position: "absolute",
-            top: b.top, bottom: b.bottom, right: b.right, left: b.left,
-            width: b.w, height: b.h, borderRadius: "50%",
-            background: "var(--primary)", opacity: b.opacity,
-            filter: "blur(32px)", pointerEvents: "none",
-          }} />
-        ))}
+        <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)", backgroundSize: "20px 20px", pointerEvents: "none" }} />
 
         <div className="max-w-7xl mx-auto px-6 sm:px-10 py-10 relative">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
@@ -243,17 +229,16 @@ export default function JournalHistoryPage() {
                 className="flex items-center justify-center rounded-2xl flex-shrink-0"
                 style={{
                   width: 56, height: 56, fontSize: 28,
-                  background: "rgba(255,255,255,0.65)",
-                  border: "1.5px solid var(--border-color)",
+                  background: "rgba(255,255,255,0.18)",
+                  border: "1.5px solid rgba(255,255,255,0.3)",
                   backdropFilter: "blur(8px)",
-                  boxShadow: "0 4px 16px rgba(115,44,63,0.15)",
                 }}
               >📚</div>
               <div>
-                <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: "var(--accent)" }}>
-                  Journal History
+                <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: "white" }}>
+                  Journal <span style={{ color: "rgba(255,255,255,0.8)" }}>History</span>
                 </h1>
-                <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
+                <p className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>
                   {totalEntries > 0 ? `${totalEntries} entr${totalEntries === 1 ? "y" : "ies"} found` : "Browse and filter your past entries"}
                 </p>
               </div>
@@ -268,11 +253,10 @@ export default function JournalHistoryPage() {
                 onClick={() => navigate("/journal")}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all duration-150"
                 style={{
-                  background: "rgba(255,255,255,0.6)",
-                  color: "var(--accent)",
-                  border: "1.5px solid var(--border-color)",
+                  background: "rgba(255,255,255,0.18)",
+                  color: "white",
+                  border: "1.5px solid rgba(255,255,255,0.3)",
                   backdropFilter: "blur(8px)",
-                  boxShadow: "0 2px 10px rgba(115,44,63,0.09)",
                 }}
               >
                 ← Back to Journal

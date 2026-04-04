@@ -8,6 +8,7 @@ import {
   deleteUser,
   toggleBlockUser,
   getUserGrowth,
+  getAgeDistribution,
 } from "../controllers/adminUserController.js";
 
 const router = express.Router();
@@ -15,12 +16,13 @@ const router = express.Router();
 // All routes are admin-protected
 router.use(adminMiddleware);
 
-router.get(   "/analytics",  getUserAnalytics);      // GET    /api/admin/users/analytics
-router.get(   "/growth",     getUserGrowth);         // GET    /api/admin/users/growth
-router.get(   "/search",     searchUsersForAdmin);   // GET    /api/admin/users/search?q=
-router.get(   "/",           getAllUsersForAdmin);    // GET    /api/admin/users
-router.get(   "/:id",        getUserByIdForAdmin);   // GET    /api/admin/users/:id
-router.patch( "/:id/block",  toggleBlockUser);       // PATCH  /api/admin/users/:id/block
-router.delete("/:id",        deleteUser);            // DELETE /api/admin/users/:id
+router.get(   "/analytics",         getUserAnalytics);      // GET    /api/admin/users/analytics
+router.get(   "/growth",            getUserGrowth);         // GET    /api/admin/users/growth
+router.get(   "/age-distribution",  getAgeDistribution);    // GET    /api/admin/users/age-distribution
+router.get(   "/search",            searchUsersForAdmin);   // GET    /api/admin/users/search?q=
+router.get(   "/",                  getAllUsersForAdmin);    // GET    /api/admin/users
+router.get(   "/:id",               getUserByIdForAdmin);   // GET    /api/admin/users/:id
+router.patch( "/:id/block",         toggleBlockUser);       // PATCH  /api/admin/users/:id/block
+router.delete("/:id",               deleteUser);            // DELETE /api/admin/users/:id
 
 export default router;

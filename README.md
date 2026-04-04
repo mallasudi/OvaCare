@@ -1,16 +1,120 @@
-# React + Vite
+# 🌸 OvaCare – Women’s Health & PCOS Management System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+OvaCare is a full-stack web application designed to help women monitor, understand, and manage their reproductive health — with a strong focus on PCOS (Polycystic Ovary Syndrome).
+It combines AI-powered assessment, cycle tracking, journaling, analytics, and consultation features into one unified platform.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## ✨ Key Features
 
-## React Compiler
+-  AI-based PCOS risk prediction  
+-  Smart cycle tracking with phase detection  
+-  Analytical dashboard with health insights  
+-  Journaling system with image upload  
+-  Doctor consultation system  
+-  Secure authentication (JWT + OTP reset)  
+-  Admin panel with system controls  
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+###  Authentication & Security
 
-## Expanding the ESLint configuration
+* JWT-based login system
+* Role-based access control
+* Forgot Password with OTP verification
+* Secure password reset flow
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+---
+
+###  UI/UX Highlights
+
+* Clean and modern UI with Tailwind CSS
+* Light/Dark theme support
+* Consistent dashboard layout
+* Smooth navigation with role-based views
+
+---
+
+##  Tech Stack
+
+### Frontend
+
+* React (Vite)
+* Tailwind CSS
+* Context API (Auth + Theme)
+* Chart.js (Data visualization)
+
+### Backend
+
+* Node.js + Express.js
+* MongoDB (Mongoose)
+* JWT Authentication
+* Nodemailer (OTP email system)
+
+---
+
+##  Installation & Setup
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/your-username/OvaCare.git
+cd OvaCare
+```
+
+### 2. Backend setup
+
+```bash
+cd backend
+npm install
+npm start
+```
+
+### 3. Frontend setup
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+##  Environment Variables
+
+Create a `.env` file in backend:
+
+```
+MONGO_URI=your_mongodb_uri
+JWT_SECRET=your_secret_key
+EMAIL_USER=your_email
+EMAIL_PASS=your_app_password
+```
+
+---
+
+##  Future Improvements
+
+* AI model optimization for higher accuracy
+* Doctor booking system
+* Mobile app version
+* Multi-language full support
+* Advanced health recommendations engine
+
+---
+
+##  Purpose
+Built as a real-world full-stack healthcare application focusing on women’s health and PCOS awareness.
+
+---
+
+##  Author
+
+**Suniti Malla**
+Full Stack Developer
+
+---
+
+##  Final Note
+
+OvaCare is not just a project — it is a step towards using technology to empower women's health through data, awareness, and accessibility.
+
+---

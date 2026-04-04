@@ -294,11 +294,13 @@ export const getSymptomInsights = async (req, res) => {
 */
 export const createOrUpdateDailyLog = async (req, res) => {
   try {
-    const { notes, win, mood, stress, energy, pain, sleep, water, tags } = req.body;
+    const { today, notes, win, mood, stress, energy, pain, sleep, water, tags } = req.body;
 
-    const now = new Date();
-    const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay   = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+    // Use client-supplied date (YYYY-MM-DD) so any timezone is handled correctly
+    const startOfDay = today
+      ? new Date(`${today}T00:00:00.000Z`)
+      : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
+    const endOfDay = new Date(startOfDay); endOfDay.setUTCHours(23, 59, 59, 999);
 
     const existing = await DailyLog.findOne({
       user_id: req.user.userId,
@@ -345,9 +347,11 @@ export const createOrUpdateDailyLog = async (req, res) => {
 */
 export const getTodayLog = async (req, res) => {
   try {
-    const now = new Date();
-    const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay   = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+    const todayParam = req.query.today;
+    const startOfDay = todayParam
+      ? new Date(`${todayParam}T00:00:00.000Z`)
+      : (() => { const d = new Date(); d.setUTCHours(0,0,0,0); return d; })();
+    const endOfDay = new Date(startOfDay); endOfDay.setUTCHours(23, 59, 59, 999);
 
     const log = await DailyLog.findOne({
       user_id: req.user.userId,
@@ -410,7 +414,7 @@ function derivePhase(predictedNextPeriod, avgCycleLength) {
   if (!predictedNextPeriod || !avgCycleLength) return null;
   const cycleLen = avgCycleLength || 28;
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
   const next = new Date(predictedNextPeriod);
   const daysUntilNext = Math.round((next - today) / 86400000);
   const dayInCycle = cycleLen - daysUntilNext;
@@ -424,15 +428,15 @@ function derivePhase(predictedNextPeriod, avgCycleLength) {
 export const getDailyLogAnalytics = async (req, res) => {
   try {
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    now.setUTCHours(0, 0, 0, 0);
 
     // Last 7 calendar days inclusive of today
     const from = new Date(now);
-    from.setDate(from.getDate() - 6);
+    from.setUTCDate(from.getUTCDate() - 6);
 
     // End of today (for inclusive query)
     const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
+    endOfToday.setUTCHours(23, 59, 59, 999);
 
     const logs = await DailyLog.find({
       user_id: req.user.userId,

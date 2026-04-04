@@ -222,6 +222,50 @@ export const toggleBlockUser = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────────────────────────────────────
+   GET /api/admin/users/age-distribution
+   Count users grouped into age brackets
+───────────────────────────────────────────────────────────────────────── */
+export const getAgeDistribution = async (req, res) => {
+  try {
+    const users = await User.find({ role: { $ne: "admin" } })
+      .select("age dateOfBirth")
+      .lean();
+
+    const buckets = { "13-18": 0, "19-25": 0, "26-35": 0, "36-45": 0, "46+": 0 };
+    const today = new Date();
+
+    for (const user of users) {
+      let age = null;
+
+      if (user.dateOfBirth) {
+        const dob = new Date(user.dateOfBirth);
+        age = today.getFullYear() - dob.getFullYear();
+        const monthDiff = today.getMonth() - dob.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+          age -= 1;
+        }
+      } else if (typeof user.age === "number" && user.age > 0) {
+        age = user.age;
+      }
+
+      if (age === null) continue;
+
+      if      (age >= 13 && age <= 18) buckets["13-18"] += 1;
+      else if (age >= 19 && age <= 25) buckets["19-25"] += 1;
+      else if (age >= 26 && age <= 35) buckets["26-35"] += 1;
+      else if (age >= 36 && age <= 45) buckets["36-45"] += 1;
+      else if (age >= 46)              buckets["46+"]   += 1;
+    }
+
+    const result = Object.entries(buckets).map(([group, count]) => ({ group, count }));
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error("[GET_AGE_DISTRIBUTION]", err.message);
+    return res.status(500).json({ message: "Failed to fetch age distribution" });
+  }
+};
+
+/* ─────────────────────────────────────────────────────────────────────────
    GET /api/admin/users/growth
    Monthly user registration counts for the last 6 months
 ───────────────────────────────────────────────────────────────────────── */

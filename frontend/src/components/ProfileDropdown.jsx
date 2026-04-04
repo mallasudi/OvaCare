@@ -433,7 +433,7 @@ export default function ProfileDropdown({ user }) {
         {showThemeCustomization && (
           <Modal onClose={() => setShowThemeCustomization(false)} title="Theme Customization">
             <div className="space-y-3">
-              {["normal", "light", "dark"].map((themeOption) => (
+              {["light", "dark"].map((themeOption) => (
                 <button
                   key={themeOption}
                   onClick={() => {
@@ -448,7 +448,7 @@ export default function ProfileDropdown({ user }) {
                   }}
                 >
                   <span className="capitalize">
-                    {themeOption === "normal" ? "🌸 Normal" : themeOption === "light" ? "☀️ Light" : "🌙 Dark"}
+                    {themeOption === "light" ? "☀️ Light" : "🌙 Dark"}
                   </span>
                   {theme === themeOption && <span>✓</span>}
                 </button>
