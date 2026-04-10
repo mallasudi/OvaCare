@@ -3,7 +3,7 @@ import Notification from "../models/Notification.js";
 import axios from "axios";
 import { getSettings } from "../services/settingsService.js";
 
-const ML_SERVICE_URL = "http://127.0.0.1:5001/predict";
+const ML_SERVICE_URL = "http://127.0.0.1:5002/predict";
 
 /*
 -----------------------------------------

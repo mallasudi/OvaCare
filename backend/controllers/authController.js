@@ -135,35 +135,73 @@ export const verifyOtp = async (req, res) => {
 /* SEND REGISTER OTP (validates all fields, stores data, sends OTP) */
 export const sendRegisterOtp = async (req, res) => {
   try {
-    const { fullName, email, password, age, contactNumber } = req.body;
+    let { fullName, name: fallbackName, email, password, age, contactNumber } = req.body;
 
-    // Field validation
-    if (!fullName || !fullName.trim()) return res.status(400).json({ message: "Full name is required" });
-    if (!email || !email.includes("@")) return res.status(400).json({ message: "A valid email address is required" });
-    if (!password || password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
-    if (!age || isNaN(age) || Number(age) < 10 || Number(age) > 100) return res.status(400).json({ message: "Enter a valid age between 10 and 100" });
-    if (!/^\d{10}$/.test(contactNumber)) return res.status(400).json({ message: "Contact number must be exactly 10 digits" });
+    // Normalize inputs – accept both "fullName" and "name" for backwards compatibility
+    fullName = (fullName || fallbackName)?.trim();
+    email = email?.trim();
+    contactNumber = contactNumber?.trim();
+    const parsedAge = Number(age);
 
+
+    // Proper field validation (clear messages)
+    if (!fullName || fullName.length === 0) {
+      return res.status(400).json({ message: "Full name is required" });
+    }
+
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ message: "A valid email address is required" });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
+    if (!age || isNaN(parsedAge) || parsedAge < 10 || parsedAge > 100) {
+      return res.status(400).json({ message: "Enter a valid age between 10 and 100" });
+    }
+
+    if (!contactNumber || !/^\d{10}$/.test(contactNumber)) {
+      return res.status(400).json({ message: "Contact number must be exactly 10 digits" });
+    }
+
+    // Check existing user
     const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ message: "An account with this email already exists" });
+    if (exists) {
+      return res.status(400).json({ message: "An account with this email already exists" });
+    }
 
+    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresMins = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
     const expiresAt = new Date(Date.now() + expiresMins * 60 * 1000);
 
-    // Upsert OTP record with all registration data (password stored plaintext – deleted on use)
+    // Save OTP + registration data
     await OtpModel.findOneAndUpdate(
       { email },
-      { otp, expiresAt, fullName: fullName.trim(), password, age: Number(age), contactNumber },
+      {
+        otp,
+        expiresAt,
+        fullName,
+        password,
+        age: parsedAge,
+        contactNumber,
+      },
       { upsert: true, new: true }
     );
 
+    // Send OTP email
     await sendOtpEmail({ to: email, otp });
 
-    res.json({ message: "OTP sent to your email. Please verify to complete registration." });
+    return res.json({
+      message: "OTP sent to your email. Please verify to complete registration.",
+    });
+
   } catch (err) {
-    console.error("sendRegisterOtp error:", err.message);
-    res.status(500).json({ message: `Failed to send OTP: ${err.message}` });
+    console.error("sendRegisterOtp error:", err);
+    return res.status(500).json({
+      message: "Failed to send OTP. Please try again.",
+    });
   }
 };
 
@@ -252,7 +290,7 @@ export const verifyRegisterOtpAndCreateAccount = async (req, res) => {
 /* LOGIN */
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, timezone } = req.body;
 
     const user = await User.findOne({ email });
     if (!user)
@@ -261,6 +299,12 @@ export const login = async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match)
       return res.status(401).json({ message: "Invalid credentials" });
+
+    // Silently update timezone whenever the user logs in (keeps it current)
+    if (timezone && typeof timezone === "string" && timezone.length < 60) {
+      user.timezone = timezone;
+      await user.save();
+    }
 
     const token = jwt.sign(
       { userId: user._id },

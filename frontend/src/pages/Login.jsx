@@ -26,7 +26,8 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      const res = await API.post("/auth/login", { email, password });
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const res = await API.post("/auth/login", { email, password, timezone });
       // Save to localStorage AND update AuthContext React state
       saveAuth(res.data);
       login(res.data.user);

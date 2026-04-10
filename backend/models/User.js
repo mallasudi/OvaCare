@@ -9,6 +9,8 @@ const userSchema = new mongoose.Schema({
   profilePicture: { type: String, default: "" },
   role:           { type: String, enum: ["user", "admin"], default: "user" },
   isActive:       { type: Boolean, default: true },
+  // IANA timezone string captured from the browser (e.g. "Asia/Kolkata", "America/New_York")
+  timezone:       { type: String, default: "UTC" },
   createdAt:      { type: Date, default: Date.now }
 });
 

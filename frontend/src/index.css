@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Chrome autofill detection — triggers animationstart event so React state can be updated */
+@keyframes onAutoFillStart { from { opacity: 1; } to { opacity: 1; } }
+input:-webkit-autofill { animation-name: onAutoFillStart; animation-duration: 0.001s; }
+
 @keyframes fadeIn {
   from {
     opacity: 0;
